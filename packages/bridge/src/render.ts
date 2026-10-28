@@ -29,7 +29,7 @@ export function renderToolResult(tool: string, data: unknown): string {
           r.sessions
             .map(
               (s) =>
-                `- [${s.sessionId}] ${s.title} — state: ${s.state}, profile: ${s.profileId}\n  ${s.url}`,
+                `- [${s.sessionId}] ${s.title} — state: ${s.state}, profile: ${s.profileId}\n  ${s.url}`
             )
             .join('\n')
         );

@@ -19,7 +19,7 @@ export interface InlineOutput {
 export class OutputStore {
   constructor(
     private readonly dir: string,
-    private readonly maxInlineChars: number,
+    private readonly maxInlineChars: number
   ) {}
 
   async process(text: string, label: string): Promise<InlineOutput> {
@@ -30,7 +30,7 @@ export class OutputStore {
     const safeLabel = label.replace(/[^a-zA-Z0-9_-]+/g, '-').slice(0, 40) || 'output';
     const file = path.join(
       this.dir,
-      `${new Date().toISOString().replace(/[:.]/g, '-')}-${safeLabel}-${crypto.randomBytes(3).toString('hex')}.log`,
+      `${new Date().toISOString().replace(/[:.]/g, '-')}-${safeLabel}-${crypto.randomBytes(3).toString('hex')}.log`
     );
     await fsp.writeFile(file, text, { encoding: 'utf8', mode: 0o600 });
     const head = Math.max(200, Math.floor(this.maxInlineChars * 0.7));

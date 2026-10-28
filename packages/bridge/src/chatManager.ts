@@ -75,7 +75,7 @@ export class ChatManager {
       throw new Error(
         'no AI provider configured. Add an OpenAI-compatible provider to ' +
           '~/.bastion-pilot/config.json (providers[] + activeProviderId) or connect an ' +
-          'MCP client such as Claude Code / Codex instead.',
+          'MCP client such as Claude Code / Codex instead.'
       );
     }
 
@@ -99,15 +99,13 @@ export class ChatManager {
         hooks: {
           onDelta: (t) =>
             emit(
-              makeEnvelope('chat_delta', { chatId, seq: ++session.seq, text: t }) as DaemonMessage,
+              makeEnvelope('chat_delta', { chatId, seq: ++session.seq, text: t }) as DaemonMessage
             ),
           onToolCall: (callId, tool, params) =>
-            emit(
-              makeEnvelope('chat_tool_call', { chatId, callId, tool, params }) as DaemonMessage,
-            ),
+            emit(makeEnvelope('chat_tool_call', { chatId, callId, tool, params }) as DaemonMessage),
           onToolResult: (callId, _tool, ok, summary) =>
             emit(
-              makeEnvelope('chat_tool_result', { chatId, callId, ok, summary }) as DaemonMessage,
+              makeEnvelope('chat_tool_result', { chatId, callId, ok, summary }) as DaemonMessage
             ),
         },
       });
@@ -117,7 +115,7 @@ export class ChatManager {
           chatId,
           stopReason: result.stopReason,
           error: result.error,
-        }) as DaemonMessage,
+        }) as DaemonMessage
       );
       void this.persist(session);
     } finally {
@@ -145,9 +143,9 @@ export class ChatManager {
         JSON.stringify(
           { chatId: session.id, providerId: session.providerId, messages: session.messages },
           null,
-          2,
+          2
         ),
-        { encoding: 'utf8', mode: 0o600 },
+        { encoding: 'utf8', mode: 0o600 }
       );
     } catch (err) {
       this.opts.log.warn('failed to persist chat:', (err as Error).message);

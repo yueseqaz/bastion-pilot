@@ -89,7 +89,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
         () => {
           if (state.approvals.delete(req.requestId)) resolve(false);
         },
-        Math.max(1_000, req.expiresAt - Date.now()),
+        Math.max(1_000, req.expiresAt - Date.now())
       );
       state.approvals.set(req.requestId, { resolve, timer });
       ext.ws.send(JSON.stringify(makeEnvelope('approval_request', req)));
@@ -138,7 +138,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   const executeTool = async (
     source: 'mcp' | 'agent' | 'panel',
     tool: string,
-    rawParams: unknown,
+    rawParams: unknown
   ): Promise<unknown> => {
     if (!TOOL_MAP.has(tool as ToolName)) throw new Error(`unknown tool: ${tool}`);
     const parsed = toolSchema(tool as ToolName).safeParse(rawParams ?? {});
@@ -146,7 +146,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       throw new Error(
         `invalid params for ${tool}: ${parsed.error.issues
           .map((i) => `${i.path.join('.')}: ${i.message}`)
-          .join('; ')}`,
+          .join('; ')}`
       );
     }
     const params = parsed.data as Record<string, unknown>;
@@ -171,7 +171,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     if (!ext) {
       throw new Error(
         'No bastion terminal session is connected. Open a bastion web-terminal tab in the ' +
-          'browser (with the BastionPilot extension granted for that site) and retry.',
+          'browser (with the BastionPilot extension granted for that site) and retry.'
       );
     }
 
@@ -202,7 +202,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     }
 
     // Bound oversized terminal output and persist the full text locally.
-    let result = data;
+    const result = data;
     if (result && typeof result === 'object') {
       const record = result as Record<string, unknown>;
       for (const field of ['text', 'screen'] as const) {
@@ -216,12 +216,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
 
     await auditAppend({
       ok: true,
-      exitCode: typeof (result as Record<string, unknown>)?.exitCode === 'number'
-        ? ((result as Record<string, unknown>).exitCode as number)
-        : undefined,
-      outputChars: typeof (result as Record<string, unknown>)?.text === 'string'
-        ? ((result as Record<string, unknown>).text as string).length
-        : undefined,
+      exitCode:
+        typeof (result as Record<string, unknown>)?.exitCode === 'number'
+          ? ((result as Record<string, unknown>).exitCode as number)
+          : undefined,
+      outputChars:
+        typeof (result as Record<string, unknown>)?.text === 'string'
+          ? ((result as Record<string, unknown>).text as string).length
+          : undefined,
       outputFile: (result as Record<string, unknown>)?.outputFile as string | undefined,
       params,
       sessionId,
@@ -257,7 +259,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
         sessions: [...state.sessions.values()],
         approvalMode: config.approval.mode,
         activeProviderId: config.activeProviderId,
-        providers: config.providers.map((p) => ({ id: p.id, label: p.label ?? p.id, model: p.model })),
+        providers: config.providers.map((p) => ({
+          id: p.id,
+          label: p.label ?? p.id,
+          model: p.model,
+        })),
         uptimeS: Math.round((Date.now() - startedAt) / 1000),
       });
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -292,8 +298,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
               makeEnvelope('error', {
                 message:
                   'invalid token — run `bastion-pilot init` and copy the token into the extension options page',
-              }),
-            ),
+              })
+            )
           );
           ws.close();
           return;
@@ -313,7 +319,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
         sendTo(conn, 'welcome', {
           daemonVersion: VERSION,
           sessions: [...state.sessions.values()],
-          providers: config.providers.map((p) => ({ id: p.id, label: p.label || p.id, model: p.model })),
+          providers: config.providers.map((p) => ({
+            id: p.id,
+            label: p.label || p.id,
+            model: p.model,
+          })),
           activeProviderId: config.activeProviderId,
         });
         return;
@@ -381,9 +391,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
         break;
       }
       case 'chat_message': {
-        chats.submit(msg.payload.chatId, msg.payload.text).catch((err) =>
-          sendTo(conn, 'error', { message: (err as Error).message }),
-        );
+        chats
+          .submit(msg.payload.chatId, msg.payload.text)
+          .catch((err) => sendTo(conn, 'error', { message: (err as Error).message }));
         break;
       }
       case 'chat_abort': {
@@ -425,12 +435,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   const actualPort = typeof address === 'object' && address !== null ? address.port : port;
 
   log.info(
-    `daemon listening on ws://127.0.0.1:${actualPort} (approval mode: ${config.approval.mode}, v${VERSION})`,
+    `daemon listening on ws://127.0.0.1:${actualPort} (approval mode: ${config.approval.mode}, v${VERSION})`
   );
   if (config.providers.length === 0) {
     log.info(
       'no AI provider configured — the built-in side-panel chat stays disabled until you add ' +
-        'one to the config; MCP clients (Claude Code, Codex, ...) work regardless',
+        'one to the config; MCP clients (Claude Code, Codex, ...) work regardless'
     );
   }
 

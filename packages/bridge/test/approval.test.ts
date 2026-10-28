@@ -4,7 +4,7 @@ import { ApprovalEngine, summarizeToolCall } from '../src/approval.js';
 function engine(
   mode: 'auto' | 'confirm' | 'readonly',
   gate: ((req: { summary: string }) => Promise<boolean>) | null = null,
-  allowlist: string[] = [],
+  allowlist: string[] = []
 ) {
   return new ApprovalEngine(
     { mode, confirmTimeoutMs: 200, readonlyAllowlist: allowlist },
@@ -14,7 +14,7 @@ function engine(
             gateCalls.push(req.summary);
             return approved;
           })
-      : null,
+      : null
   );
 }
 let gateCalls: string[] = [];
@@ -61,22 +61,24 @@ describe('ApprovalEngine', () => {
   it('readonly mode blocks mutating tools unless allowlisted', async () => {
     const e = engine('readonly', null, ['^git status', '^df']);
     expect(
-      (await e.check('mcp', 'send_command', { sessionId: 's', command: 'git status' })).approved,
+      (await e.check('mcp', 'send_command', { sessionId: 's', command: 'git status' })).approved
     ).toBe(true);
     expect(
       (await e.check('mcp', 'send_command', { sessionId: 's', command: 'git push --force' }))
-        .approved,
+        .approved
     ).toBe(false);
-    expect((await e.check('mcp', 'send_command', { sessionId: 's', command: 'df -h' })).approved).toBe(
-      true,
+    expect(
+      (await e.check('mcp', 'send_command', { sessionId: 's', command: 'df -h' })).approved
+    ).toBe(true);
+    expect((await e.check('mcp', 'send_key', { sessionId: 's', key: 'enter' })).approved).toBe(
+      false
     );
-    expect((await e.check('mcp', 'send_key', { sessionId: 's', key: 'enter' })).approved).toBe(false);
   });
 
   it('treats an invalid allowlist regex as non-matching', async () => {
     const e = engine('readonly', null, ['[unclosed']);
     expect(
-      (await e.check('mcp', 'send_command', { sessionId: 's', command: 'anything' })).approved,
+      (await e.check('mcp', 'send_command', { sessionId: 's', command: 'anything' })).approved
     ).toBe(false);
   });
 

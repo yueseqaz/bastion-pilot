@@ -24,15 +24,8 @@ export class TerminalTextRenderer {
   private line = '';
   private col = 0;
   private strLen = 0;
-  private state:
-    | 'ground'
-    | 'esc'
-    | 'esc-int'
-    | 'csi'
-    | 'osc'
-    | 'osc-esc'
-    | 'str'
-    | 'str-esc' = 'ground';
+  private state: 'ground' | 'esc' | 'esc-int' | 'csi' | 'osc' | 'osc-esc' | 'str' | 'str-esc' =
+    'ground';
   private completed: string[] = [];
 
   /**
@@ -69,7 +62,10 @@ export class TerminalTextRenderer {
   private step(ch: string) {
     const code = ch.codePointAt(0) ?? 0;
     if (
-      (this.state === 'osc' || this.state === 'str' || this.state === 'osc-esc' || this.state === 'str-esc') &&
+      (this.state === 'osc' ||
+        this.state === 'str' ||
+        this.state === 'osc-esc' ||
+        this.state === 'str-esc') &&
       ++this.strLen > TerminalTextRenderer.MAX_STR_CHARS
     ) {
       // Unterminated string sequence: give up on it and resume printing.
@@ -222,7 +218,10 @@ export class TextRingBuffer {
     return this.droppedAny;
   }
 
-  readFromCursor(cursor: number, maxChars: number): {
+  readFromCursor(
+    cursor: number,
+    maxChars: number
+  ): {
     text: string;
     nextCursor: number;
     hasMore: boolean;

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BastionPilot — Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>BastionPilot <span class="ver"></span></h1>
+
+      <section>
+        <h2>1. Local daemon</h2>
+        <p class="hint">
+          Run <code>bastion-pilot daemon</code> on your machine, then paste the pairing token
+          printed by <code>bastion-pilot init</code>.
+        </p>
+        <label>
+          Daemon URL
+          <input id="daemon-url" type="text" placeholder="ws://127.0.0.1:8765" />
+        </label>
+        <label>
+          Pairing token
+          <input id="token" type="password" placeholder="paste the token from bastion-pilot init" />
+        </label>
+        <div class="row">
+          <button id="save-btn" class="primary">Save</button>
+          <button id="test-btn">Test connection</button>
+          <span id="test-result" class="result"></span>
+        </div>
+      </section>
+
+      <section>
+        <h2>2. Bastion sites</h2>
+        <p class="hint">
+          Grant BastionPilot access to the origins that host your bastion web terminal. The
+          extension only runs on the sites you add here.
+        </p>
+        <div class="row">
+          <input id="site-input" type="text" placeholder="https://bastion.example.com" />
+          <button id="add-site-btn" class="primary">Grant access</button>
+        </div>
+        <ul id="site-list"></ul>
+        <p class="hint" id="permission-hint"></p>
+      </section>
+
+      <section>
+        <h2>3. Approvals &amp; audit</h2>
+        <p class="hint">
+          The approval mode (auto / confirm / readonly), the audit log and AI providers are
+          configured on the daemon side in <code>~/.bastion-pilot/config.json</code>. The default
+          mode <strong>confirm</strong> shows every mutating command here or as a notification
+          before it runs.
+        </p>
+      </section>
+    </main>
+
+    <script src="options.js"></script>
+  </body>
+</html>

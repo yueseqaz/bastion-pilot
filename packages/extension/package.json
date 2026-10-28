@@ -1,0 +1,22 @@
+{
+  "name": "@bastion-pilot/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "BastionPilot browser extension: hooks bastion web terminals for AI agents",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "zip": "node scripts/build.mjs && node scripts/zip.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@bastion-pilot/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.24",
+    "esbuild": "^0.25.0",
+    "vitest": "^3.2.0"
+  }
+}

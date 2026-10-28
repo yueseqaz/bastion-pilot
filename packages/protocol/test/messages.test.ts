@@ -48,11 +48,11 @@ describe('messages', () => {
       expect(schema.safeParse({}).success).toBe(name === 'list_sessions');
     }
     expect(toolSchema('send_command').safeParse({ sessionId: 's', command: 'ls' }).success).toBe(
-      true,
+      true
     );
     expect(toolSchema('send_command').safeParse({ sessionId: 's' }).success).toBe(false);
-    expect(
-      toolSchema('send_key').safeParse({ sessionId: 's', key: 'ctrl+space' }).success,
-    ).toBe(false);
+    expect(toolSchema('send_key').safeParse({ sessionId: 's', key: 'ctrl+space' }).success).toBe(
+      false
+    );
   });
 });

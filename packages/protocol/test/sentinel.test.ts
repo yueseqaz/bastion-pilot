@@ -18,7 +18,7 @@ describe('sentinel', () => {
 
   it('wraps a command with trailing-newline normalization', () => {
     expect(wrapCommandWithSentinel('ls -la\n\n\n', 'ab12cd34')).toBe(
-      'ls -la\necho __BP_ab12cd34_$?__\n',
+      'ls -la\necho __BP_ab12cd34_$?__\n'
     );
   });
 

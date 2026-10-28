@@ -278,20 +278,26 @@ export function makeEnvelope(type: string, payload: unknown): Envelope {
   };
 }
 
-export function parseClientMessage(raw: unknown):
-  | { ok: true; message: ClientMessage }
-  | { ok: false; error: string } {
+export function parseClientMessage(
+  raw: unknown
+): { ok: true; message: ClientMessage } | { ok: false; error: string } {
   const parsed = ClientMessage.safeParse(raw);
   return parsed.success
     ? { ok: true, message: parsed.data }
-    : { ok: false, error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') };
+    : {
+        ok: false,
+        error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+      };
 }
 
-export function parseDaemonMessage(raw: unknown):
-  | { ok: true; message: DaemonMessage }
-  | { ok: false; error: string } {
+export function parseDaemonMessage(
+  raw: unknown
+): { ok: true; message: DaemonMessage } | { ok: false; error: string } {
   const parsed = DaemonMessage.safeParse(raw);
   return parsed.success
     ? { ok: true, message: parsed.data }
-    : { ok: false, error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') };
+    : {
+        ok: false,
+        error: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+      };
 }

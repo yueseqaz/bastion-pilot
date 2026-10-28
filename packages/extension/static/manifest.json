@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "BastionPilot",
+  "version": "0.1.0",
+  "description": "Let AI agents operate bastion-host web terminals — bridge Claude Code, Codex or your own AI provider to the terminal in your browser.",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "BastionPilot",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "options_page": "options.html",
+  "permissions": ["storage", "tabs", "scripting", "sidePanel", "notifications", "alarms"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"]
+}

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BastionPilot</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span id="status-dot" class="dot dot-off" title="daemon connection"></span>
+        <span class="brand-name">BastionPilot</span>
+      </div>
+      <select id="session-select" title="active terminal session" disabled>
+        <option value="">no terminal hooked</option>
+      </select>
+      <button id="open-options" class="icon-btn" title="Settings">⚙</button>
+    </header>
+
+    <div id="approvals" class="approvals"></div>
+
+    <main id="transcript" class="transcript">
+      <div class="empty-hint">
+        <p><strong>BastionPilot</strong> bridges AI agents to your bastion web terminal.</p>
+        <p>
+          1. Start the local daemon: <code>bastion-pilot daemon</code><br />
+          2. Pair the token in <a href="#" id="empty-options-link">Settings</a><br />
+          3. Open a bastion web-terminal tab, then ask anything here — or connect Claude&nbsp;Code /
+          Codex via MCP.
+        </p>
+      </div>
+    </main>
+
+    <footer class="composer">
+      <button id="abort-btn" class="abort hidden" title="Stop the assistant">■ Stop</button>
+      <textarea
+        id="input"
+        rows="2"
+        placeholder="Ask about this server… (Enter to send, Shift+Enter for a new line)"
+      ></textarea>
+      <button id="send-btn" class="send" title="Send">➤</button>
+    </footer>
+
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

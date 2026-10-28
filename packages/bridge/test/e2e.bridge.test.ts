@@ -2,14 +2,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { WebSocket } from 'ws';
-import {
-  makeEnvelope,
-  type SessionInfo,
-} from '@bastion-pilot/protocol';
+import { makeEnvelope, type SessionInfo } from '@bastion-pilot/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 import { defaultConfig, saveConfig } from '../src/config.js';
-import { startDaemon, type DaemonHandle } from '../src/daemon.js';
+import { startDaemon } from '../src/daemon.js';
 import { HubClient } from '../src/hubClient.js';
+
+type BpPayload = Record<string, unknown>;
+type BpMessage = { type: string; payload: BpPayload };
 import { createLogger } from '../src/logger.js';
 
 const TOKEN = 'e2e-test-token-0123456789abcdef';
@@ -32,9 +32,9 @@ function makeHome(approvalMode: 'auto' | 'confirm' | 'readonly'): string {
 
 class FakeExtension {
   private ws: WebSocket;
-  private received: Array<{ type: string; payload: any }> = [];
-  private waiters: Array<{ type: string; resolve: (m: { type: string; payload: any }) => void }> = [];
-  onToolCall?: (call: { callId: string; tool: string; params: any }) => void;
+  private received: BpMessage[] = [];
+  private waiters: Array<{ type: string; resolve: (m: BpMessage) => void }> = [];
+  onToolCall?: (call: { callId: string; tool: string; params: BpPayload }) => void;
   onApprovalRequest?: (req: { requestId: string; summary: string }) => void;
   readonly welcome: Promise<void>;
 
@@ -46,18 +46,22 @@ class FakeExtension {
         this.send('hello', { token: TOKEN, role: 'extension', name: 'fake-ext', version: '0' });
       });
       this.ws.on('message', (raw) => {
-        const msg = JSON.parse(String(raw)) as { type: string; payload: any };
+        const msg = JSON.parse(String(raw)) as BpMessage;
         if (msg.type === 'welcome') resolve();
         this.dispatch(msg);
       });
     });
   }
 
-  private dispatch(msg: { type: string; payload: any }) {
+  private dispatch(msg: BpMessage) {
     this.received.push(msg);
     if (msg.type === 'ping') this.send('pong', {});
-    if (msg.type === 'tool_call') this.onToolCall?.(msg.payload);
-    if (msg.type === 'approval_request') this.onApprovalRequest?.(msg.payload);
+    if (msg.type === 'tool_call')
+      this.onToolCall?.(
+        msg.payload as unknown as { callId: string; tool: string; params: BpPayload }
+      );
+    if (msg.type === 'approval_request')
+      this.onApprovalRequest?.(msg.payload as unknown as { requestId: string; summary: string });
     const idx = this.waiters.findIndex((w) => w.type === msg.type);
     if (idx >= 0) {
       const w = this.waiters.splice(idx, 1)[0];
@@ -85,7 +89,7 @@ class FakeExtension {
     this.send('approval_response', { requestId, approved });
   }
 
-  wait(type: string, timeoutMs = 4_000): Promise<{ type: string; payload: any }> {
+  wait(type: string, timeoutMs = 4_000): Promise<BpMessage> {
     const existing = this.received.find((m) => m.type === type);
     if (existing) return Promise.resolve(existing);
     return new Promise((resolve, reject) => {
@@ -163,16 +167,16 @@ describe('daemon e2e', () => {
     const { ext, brain } = await boot('auto');
     ext.onToolCall = (call) => ext.replyToolError(call.callId, 'terminal not ready');
     await expect(brain.executeTool('mcp', 'get_screen', { sessionId: 'sess_1' })).rejects.toThrow(
-      /terminal not ready/,
+      /terminal not ready/
     );
   });
 
   it('rejects unknown tools and invalid params', async () => {
     const { brain } = await boot('auto');
     await expect(brain.executeTool('mcp', 'does_not_exist', {})).rejects.toThrow(/unknown tool/);
-    await expect(
-      brain.executeTool('mcp', 'send_command', { sessionId: 's' }),
-    ).rejects.toThrow(/invalid params/);
+    await expect(brain.executeTool('mcp', 'send_command', { sessionId: 's' })).rejects.toThrow(
+      /invalid params/
+    );
   });
 
   it('saves oversized output to a file and reports the path', async () => {
@@ -210,7 +214,14 @@ describe('daemon e2e', () => {
   it('asks the user for approval in confirm mode and honors consent', async () => {
     const { ext, brain } = await boot('confirm');
     ext.onApprovalRequest = (req) => ext.replyApproval(req.requestId, true);
-    ext.onToolCall = (call) => ext.replyTool(call.callId, { status: 'completed', exitCode: 0, cursor: 1, text: '', hasMore: false });
+    ext.onToolCall = (call) =>
+      ext.replyTool(call.callId, {
+        status: 'completed',
+        exitCode: 0,
+        cursor: 1,
+        text: '',
+        hasMore: false,
+      });
     const result = (await brain.executeTool('mcp', 'send_command', {
       sessionId: 'sess_1',
       command: 'uptime',
@@ -224,7 +235,7 @@ describe('daemon e2e', () => {
     const { ext, brain } = await boot('confirm');
     ext.onApprovalRequest = (req) => ext.replyApproval(req.requestId, false);
     await expect(
-      brain.executeTool('mcp', 'send_command', { sessionId: 'sess_1', command: 'rm -rf /tmp/x' }),
+      brain.executeTool('mcp', 'send_command', { sessionId: 'sess_1', command: 'rm -rf /tmp/x' })
     ).rejects.toThrow(/Blocked by approval policy/);
   });
 
@@ -232,7 +243,7 @@ describe('daemon e2e', () => {
     const { ext, brain } = await boot('readonly');
     ext.onToolCall = (call) => ext.replyTool(call.callId, { screen: 'ok', truncated: false });
     await expect(
-      brain.executeTool('mcp', 'send_command', { sessionId: 'sess_1', command: 'ls' }),
+      brain.executeTool('mcp', 'send_command', { sessionId: 'sess_1', command: 'ls' })
     ).rejects.toThrow(/readonly/);
     const result = (await brain.executeTool('mcp', 'get_screen', { sessionId: 'sess_1' })) as {
       screen: string;
@@ -249,9 +260,14 @@ describe('daemon e2e', () => {
       bad.on('open', () =>
         bad.send(
           JSON.stringify(
-            makeEnvelope('hello', { token: 'wrong-token-aaaaaaaaaa', role: 'brain', name: 'x', version: '0' }),
-          ),
-        ),
+            makeEnvelope('hello', {
+              token: 'wrong-token-aaaaaaaaaa',
+              role: 'brain',
+              name: 'x',
+              version: '0',
+            })
+          )
+        )
       );
       bad.on('message', (raw) => {
         const msg = JSON.parse(String(raw));

@@ -59,13 +59,13 @@ export function summarizeToolCall(tool: string, params: Record<string, unknown>)
 export class ApprovalEngine {
   constructor(
     private readonly policy: ApprovalPolicy,
-    private readonly gate: UserApprovalGate | null,
+    private readonly gate: UserApprovalGate | null
   ) {}
 
   async check(
     source: string,
     tool: string,
-    params: Record<string, unknown>,
+    params: Record<string, unknown>
   ): Promise<ApprovalDecision> {
     if (isReadonlyTool(tool)) {
       return { approved: true, reason: 'read-only tool' };

@@ -90,13 +90,17 @@ export function defaultConfig(): BastionPilotConfig {
   };
 }
 
-function mergeConfig(base: BastionPilotConfig, user: z.infer<typeof configSchema>): BastionPilotConfig {
+function mergeConfig(
+  base: BastionPilotConfig,
+  user: z.infer<typeof configSchema>
+): BastionPilotConfig {
   return {
     server: { ...base.server, ...user.server },
     security: { ...base.security, ...user.security },
     approval: { ...base.approval, ...user.approval },
     providers: user.providers ?? base.providers,
-    activeProviderId: user.activeProviderId !== undefined ? user.activeProviderId : base.activeProviderId,
+    activeProviderId:
+      user.activeProviderId !== undefined ? user.activeProviderId : base.activeProviderId,
     agent: { ...base.agent, ...user.agent },
     output: { ...base.output, ...user.output },
   };
@@ -137,9 +141,7 @@ export function loadConfig(home: string = resolveHome()): {
   }
   const parsed = configSchema.safeParse(raw);
   if (!parsed.success) {
-    const issues = parsed.error.issues
-      .map((i) => `${i.path.join('.')}: ${i.message}`)
-      .join('; ');
+    const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
     throw new Error(`invalid config file (${paths.config}): ${issues}`);
   }
   const config = mergeConfig(defaultConfig(), parsed.data);

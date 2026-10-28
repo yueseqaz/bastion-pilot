@@ -28,7 +28,7 @@ export async function runMcpServer(): Promise<void> {
         env: process.env,
       },
     },
-    log,
+    log
   );
   await hub.connect();
 
@@ -47,7 +47,7 @@ export async function runMcpServer(): Promise<void> {
             isError: true,
           };
         }
-      },
+      }
     );
   }
 

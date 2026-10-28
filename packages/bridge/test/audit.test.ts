@@ -92,10 +92,7 @@ describe('config', () => {
 
   it('merges user overrides over defaults', () => {
     const dir = tmpDir();
-    saveConfig(
-      { ...defaultConfig(), server: { port: 9999 }, activeProviderId: 'local' },
-      dir,
-    );
+    saveConfig({ ...defaultConfig(), server: { port: 9999 }, activeProviderId: 'local' }, dir);
     const { config, created } = loadConfig(dir);
     expect(created).toBe(false);
     expect(config.server.port).toBe(9999);

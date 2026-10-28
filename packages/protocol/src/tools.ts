@@ -13,10 +13,7 @@ export type ToolName = (typeof ToolName)[keyof typeof ToolName];
 
 export const TOOL_NAMES: ToolName[] = Object.values(ToolName);
 
-const sessionId = z
-  .string()
-  .min(1)
-  .describe('Terminal session id, as returned by list_sessions.');
+const sessionId = z.string().min(1).describe('Terminal session id, as returned by list_sessions.');
 
 /* ------------------------------------------------------------------ */
 /* Parameter schemas (used as MCP ZodRawShape and validated on both    */
@@ -34,7 +31,7 @@ export const SendCommandParams = z.object({
       'A single shell command to type and execute. One logical command per call — ' +
         'chain steps with `&&` or `;` instead of pasting many lines. No trailing newline. ' +
         'Do NOT start interactive full-screen programs (vim, top, less). If the command ' +
-        'may read stdin (e.g. mysql, python REPL), redirect it: `cmd </dev/null`.',
+        'may read stdin (e.g. mysql, python REPL), redirect it: `cmd </dev/null`.'
     ),
   waitMs: z
     .number()
@@ -44,7 +41,7 @@ export const SendCommandParams = z.object({
     .optional()
     .describe(
       'How long to watch for completion, in milliseconds (default 10000). ' +
-        'Use larger values for slow commands (builds, installs, big greps).',
+        'Use larger values for slow commands (builds, installs, big greps).'
     ),
   attachSentinel: z
     .boolean()
@@ -52,7 +49,7 @@ export const SendCommandParams = z.object({
     .describe(
       'Append an `echo __BP_..._$?__` sentinel after the command so BastionPilot can ' +
         'detect completion and exit code (default true). Set false only when typing ' +
-        'into an interactive dialog (y/n confirmations, pager prompts).',
+        'into an interactive dialog (y/n confirmations, pager prompts).'
     ),
 });
 
@@ -66,7 +63,7 @@ export const ReadOutputParams = z.object({
     .describe(
       'Read output produced after this offset (take `cursor` from the previous ' +
         'read_output/send_command/wait_output result). Omit to read from the beginning ' +
-        'of the retained scrollback.',
+        'of the retained scrollback.'
     ),
   maxChars: z
     .number()
@@ -94,7 +91,7 @@ export const WaitOutputParams = z.object({
     .max(60_000)
     .optional()
     .describe(
-      'Consider the command finished when no new bytes arrive for this long (default 1000).',
+      'Consider the command finished when no new bytes arrive for this long (default 1000).'
     ),
 });
 
@@ -121,7 +118,7 @@ export const SendKeyParams = z.object({
     ])
     .describe(
       "'ctrl+c' aborts the running command; 'enter' confirms a prompt; " +
-        "'up'/'down' walk shell history; 'esc' cancels.",
+        "'up'/'down' walk shell history; 'esc' cancels."
     ),
 });
 
@@ -155,11 +152,13 @@ export const ListSessionsResult = z.object({
 });
 
 export const SendCommandResult = z.object({
-  status: z.enum(['completed', 'quiet', 'timeout']).describe(
-    'completed = sentinel seen (exitCode is authoritative); ' +
-      'quiet = no new output for a while (maybe still running); ' +
-      'timeout = wait window elapsed while output kept flowing.',
-  ),
+  status: z
+    .enum(['completed', 'quiet', 'timeout'])
+    .describe(
+      'completed = sentinel seen (exitCode is authoritative); ' +
+        'quiet = no new output for a while (maybe still running); ' +
+        'timeout = wait window elapsed while output kept flowing.'
+    ),
   exitCode: z
     .number()
     .nullable()
@@ -204,7 +203,7 @@ export interface ToolDescriptor {
 }
 
 const AUDIT_WARNING =
-  ' Commands run on a real server under the user\'s account and are fully ' +
+  " Commands run on a real server under the user's account and are fully " +
   'audit-logged by the bastion host. Never attempt to disable, evade or tamper with auditing.';
 
 export const TOOLS: ToolDescriptor[] = [
@@ -254,7 +253,8 @@ export const TOOLS: ToolDescriptor[] = [
       "Send a special key press to a terminal session: 'ctrl+c' to abort the running command, " +
       "'enter' to confirm, 'esc' to cancel, 'up'/'down' for history. Use ctrl+c to stop a " +
       'runaway command. Never use this to answer a password/sudo prompt — refuse sensitive ' +
-      'interactive input and ask the human to type it themselves.' + AUDIT_WARNING,
+      'interactive input and ask the human to type it themselves.' +
+      AUDIT_WARNING,
     shape: SendKeyParams.shape,
   },
   {
@@ -269,7 +269,7 @@ export const TOOLS: ToolDescriptor[] = [
 ];
 
 export const TOOL_MAP: ReadonlyMap<ToolName, ToolDescriptor> = new Map(
-  TOOLS.map((t) => [t.name, t]),
+  TOOLS.map((t) => [t.name, t])
 );
 
 export function toolSchema(name: ToolName): z.ZodObject<z.ZodRawShape> {

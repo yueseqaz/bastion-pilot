@@ -2,7 +2,14 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { ToolName, toolSchema, parseDaemonMessage, makeEnvelope, type DaemonMessage, type SessionInfo } from '@bastion-pilot/protocol';
+import {
+  ToolName,
+  toolSchema,
+  parseDaemonMessage,
+  makeEnvelope,
+  type DaemonMessage,
+  type SessionInfo,
+} from '@bastion-pilot/protocol';
 import WebSocket from 'ws';
 
 export interface HubClientOptions {
@@ -61,7 +68,11 @@ export class HubClient {
 
   constructor(
     private readonly opts: HubClientOptions,
-    private readonly log: { info(...a: unknown[]): void; warn(...a: unknown[]): void; error(...a: unknown[]): void },
+    private readonly log: {
+      info(...a: unknown[]): void;
+      warn(...a: unknown[]): void;
+      error(...a: unknown[]): void;
+    }
   ) {}
 
   async connect(): Promise<void> {
@@ -198,11 +209,17 @@ export class HubClient {
     this.ws.send(JSON.stringify(makeEnvelope(type, payload)));
   }
 
-  async executeTool(source: 'mcp' | 'agent' | 'panel', tool: string, params: unknown): Promise<unknown> {
+  async executeTool(
+    source: 'mcp' | 'agent' | 'panel',
+    tool: string,
+    params: unknown
+  ): Promise<unknown> {
     const schema = toolSchema(tool as ToolName);
     const parsed = schema.safeParse(params);
     if (!parsed.success) {
-      throw new Error(`invalid params for ${tool}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+      throw new Error(
+        `invalid params for ${tool}: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`
+      );
     }
     const callId = `call_${++this.seq}_${Date.now()}`;
     const timeoutMs = LONG_TOOLS.has(tool) ? LONG_TOOL_TIMEOUT_MS : TOOL_TIMEOUT_MS;

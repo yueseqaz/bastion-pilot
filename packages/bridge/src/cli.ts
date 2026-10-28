@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import { configPaths, loadConfig, resolveHome, type BastionPilotConfig } from './config.js';
 import { startDaemon } from './daemon.js';
 import { isPortServing } from './hubClient.js';
-import { createLogger } from './logger.js';
 import { runMcpServer } from './mcpServer.js';
 import { VERSION } from './version.js';
 
@@ -97,7 +96,7 @@ Pairing token (paste into the extension options page):
    Self-hosted / intranet gateways work the same way (any OpenAI-compatible URL).
 
 5) Verify:  bastion-pilot doctor
-`,
+`
   );
 }
 

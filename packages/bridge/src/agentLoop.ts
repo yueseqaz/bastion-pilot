@@ -1,16 +1,15 @@
-import {
-  TOOLS,
-  toolSchema,
-  type ToolDescriptor,
-  type ToolName,
-} from '@bastion-pilot/protocol';
+import { TOOLS, toolSchema, type ToolDescriptor, type ToolName } from '@bastion-pilot/protocol';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { ProviderConfig } from './config.js';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
-  tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }>;
   tool_call_id?: string;
 }
 
@@ -133,7 +132,7 @@ export class AgentLoop {
   private async chat(
     messages: ChatMessage[],
     signal: AbortSignal,
-    hooks: LoopHooks,
+    hooks: LoopHooks
   ): Promise<{ content: string | null; toolCalls: AccumulatedToolCall[] }> {
     const { provider } = this.opts;
     const base = provider.baseUrl.replace(/\/+$/, '');
