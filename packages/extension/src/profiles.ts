@@ -56,7 +56,52 @@ export const JUMPSERVER_PROFILE: SiteProfile = {
   promptHints: ['$ ', '# ', ']$ ', ']# ', ']~$ ', 'optimus>$'],
 };
 
-export const BUILTIN_PROFILES: SiteProfile[] = [GENERIC_XTERM_PROFILE, JUMPSERVER_PROFILE];
+/** Experimental profiles: raw xterm.js framing is the common case for these
+ * products, but they have not been field-verified against every version.
+ * If a product misbehaves, follow profiles/README.md to adjust the framing. */
+export const TELEPORT_PROFILE: SiteProfile = {
+  id: 'teleport',
+  name: 'Teleport (web terminal)',
+  description:
+    'EXPERIMENTAL — Teleport web UI terminal (xterm.js over a raw PTY stream). Verify framing ' +
+    'via DevTools if output looks garbled.',
+  framer: { type: 'raw' },
+  inputMode: 'socket',
+  terminalDomHints: ['.xterm', '.xterm-screen'],
+  promptHints: ['$ ', '# ', '➜ ', '~$ '],
+};
+
+export const QIZHI_PROFILE: SiteProfile = {
+  id: 'qizhi',
+  name: 'Qizhi (齐治运维堡垒机)',
+  description:
+    'EXPERIMENTAL — Qizhi bastion web terminal (xterm.js-based, raw PTY stream). ' +
+    'Verify framing via DevTools if output looks garbled.',
+  framer: { type: 'raw' },
+  inputMode: 'socket',
+  terminalDomHints: ['.xterm', '.xterm-screen', '#term', '.terminal-box'],
+  promptHints: ['$ ', '# ', ']$ ', ']# '],
+};
+
+export const ALIYUN_BASTIONHOST_PROFILE: SiteProfile = {
+  id: 'aliyun-bastionhost',
+  name: 'Aliyun Bastionhost (云盾堡垒机)',
+  description:
+    'EXPERIMENTAL — Alibaba Cloud Bastionhost web terminal (xterm.js-based, raw PTY stream). ' +
+    'Verify framing via DevTools if output looks garbled.',
+  framer: { type: 'raw' },
+  inputMode: 'socket',
+  terminalDomHints: ['.xterm', '.xterm-screen', '#terminal-container'],
+  promptHints: ['$ ', '# ', ']$ ', ']# '],
+};
+
+export const BUILTIN_PROFILES: SiteProfile[] = [
+  GENERIC_XTERM_PROFILE,
+  JUMPSERVER_PROFILE,
+  TELEPORT_PROFILE,
+  QIZHI_PROFILE,
+  ALIYUN_BASTIONHOST_PROFILE,
+];
 
 export function profileById(id: string | undefined | null): SiteProfile {
   if (id) {

@@ -8,6 +8,8 @@ export const ToolName = {
   WaitOutput: 'wait_output',
   SendKey: 'send_key',
   GetScreen: 'get_screen',
+  UploadFile: 'upload_file',
+  DownloadFile: 'download_file',
 } as const;
 export type ToolName = (typeof ToolName)[keyof typeof ToolName];
 
@@ -133,6 +135,31 @@ export const GetScreenParams = z.object({
     .describe('Maximum number of lines to return (default 40).'),
 });
 
+export const UploadFileParams = z.object({
+  sessionId,
+  localPath: z
+    .string()
+    .min(1)
+    .describe('Absolute path of the file on YOUR machine (where the daemon runs).'),
+  remotePath: z.string().min(1).describe('Absolute destination path on the remote server.'),
+  overwrite: z
+    .boolean()
+    .optional()
+    .describe('Overwrite the remote file if it exists (default false — the call fails instead).'),
+});
+
+export const DownloadFileParams = z.object({
+  sessionId,
+  remotePath: z.string().min(1).describe('Absolute path of the file on the remote server.'),
+  localPath: z
+    .string()
+    .optional()
+    .describe(
+      'Where to store the downloaded file on your machine. Defaults to ' +
+        '~/.bastion-pilot/downloads/<basename>.'
+    ),
+});
+
 /* ------------------------------------------------------------------ */
 /* Result schemas (what the extension returns for each tool).          */
 /* ------------------------------------------------------------------ */
@@ -189,6 +216,16 @@ export const SendKeyResult = z.object({ ok: z.boolean() });
 export const GetScreenResult = z.object({
   screen: z.string(),
   truncated: z.boolean(),
+});
+
+export const UploadFileResult = z.object({
+  remotePath: z.string(),
+  bytes: z.number(),
+});
+
+export const DownloadFileResult = z.object({
+  localPath: z.string(),
+  bytes: z.number(),
 });
 
 /* ------------------------------------------------------------------ */
@@ -265,6 +302,26 @@ export const TOOLS: ToolDescriptor[] = [
       'in text form). Best when the terminal is on an alternate screen (vim, top, interactive ' +
       'menus) or when you need to see the current prompt state.',
     shape: GetScreenParams.shape,
+  },
+  {
+    name: ToolName.UploadFile,
+    title: 'Upload a local file to the remote server',
+    description:
+      'Upload a file from your machine to the remote server through the terminal (base64 over ' +
+      'the PTY — no SFTP required). Fails if the remote file exists unless overwrite=true. ' +
+      'Works for files up to ~64 MB; larger transfers are refused.' +
+      AUDIT_WARNING,
+    shape: UploadFileParams.shape,
+  },
+  {
+    name: ToolName.DownloadFile,
+    title: 'Download a remote file to your machine',
+    description:
+      'Download a file from the remote server to your machine through the terminal (base64 ' +
+      'over the PTY) and store it locally, returning the local path. Works for files up to ' +
+      '~64 MB; for bigger files use streaming commands (tar/gzip + split) instead.' +
+      AUDIT_WARNING,
+    shape: DownloadFileParams.shape,
   },
 ];
 

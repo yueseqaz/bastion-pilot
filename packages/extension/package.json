@@ -1,6 +1,6 @@
 {
   "name": "@bastion-pilot/extension",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "BastionPilot browser extension: hooks bastion web terminals for AI agents",

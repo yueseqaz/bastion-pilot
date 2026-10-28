@@ -477,6 +477,7 @@ async function syncContentScripts() {
         js: ['interceptor.js'],
         runAt: 'document_start',
         world: 'MAIN',
+        allFrames: true,
       },
       {
         id: SCRIPT_CONTENT,
@@ -484,6 +485,7 @@ async function syncContentScripts() {
         js: ['content.js'],
         runAt: 'document_start',
         world: 'ISOLATED',
+        allFrames: true,
       },
     ]);
   } catch (err) {
@@ -504,7 +506,7 @@ async function injectIntoExistingTabs() {
       if (tab.id === undefined) continue;
       try {
         await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
+          target: { tabId: tab.id, allFrames: true },
           files: ['interceptor.js'],
           world: 'MAIN',
         });
@@ -513,7 +515,7 @@ async function injectIntoExistingTabs() {
       }
       try {
         await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
+          target: { tabId: tab.id, allFrames: true },
           files: ['content.js'],
           world: 'ISOLATED',
         });

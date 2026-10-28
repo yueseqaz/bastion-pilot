@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
+import fsp from 'node:fs/promises';
 import http from 'node:http';
+import path from 'node:path';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import {
   TOOL_MAP,
@@ -16,6 +18,8 @@ import { OutputStore } from './outputStore.js';
 import { ApprovalEngine } from './approval.js';
 import { renderToolResult } from './render.js';
 import { ChatManager } from './chatManager.js';
+import { FileTransfer, type CommandResultLike, type ReadResultLike } from './fileTransfer.js';
+import { TranscriptRecorder } from './transcripts.js';
 import { VERSION } from './version.js';
 import { createLogger, type Logger } from './logger.js';
 
@@ -135,6 +139,156 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     await audit.flush();
   };
 
+  const transcripts = new TranscriptRecorder(paths.transcriptsDir);
+
+  /** Send a tool call to the browser without approval/audit — used internally
+   * by file transfers after the umbrella tool was already approved. */
+  const routeToExtension = async (
+    sessionId: string | undefined,
+    tool: string,
+    params: Record<string, unknown>,
+    source: 'mcp' | 'agent' | 'panel'
+  ): Promise<unknown> => {
+    const ext = pickExtension(sessionId);
+    if (!ext) {
+      throw new Error(
+        'No bastion terminal session is connected. Open a bastion web-terminal tab in the ' +
+          'browser (with the BastionPilot extension granted for that site) and retry.'
+      );
+    }
+    const callId = crypto.randomUUID();
+    const timeoutMs =
+      tool === ToolName.SendCommand || tool === ToolName.WaitOutput ? 660_000 : 120_000;
+    return await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        state.toolPending.delete(callId);
+        reject(new Error(`tool ${tool} timed out in the browser after ${timeoutMs}ms`));
+      }, timeoutMs);
+      state.toolPending.set(callId, { resolve, reject, timer });
+      sendTo(ext, 'tool_call', { callId, source, tool, params });
+    });
+  };
+
+  const recordTranscript = (
+    sessionId: string | undefined,
+    source: string,
+    tool: string,
+    exitCode: number | undefined,
+    text: string | undefined
+  ) => {
+    if (!config.transcripts.enabled || !sessionId) return;
+    transcripts.append({
+      ts: new Date().toISOString(),
+      source,
+      tool,
+      sessionId,
+      exitCode,
+      text,
+    });
+  };
+
+  /** Internal send_command/read_output pair backing file transfers. */
+  const makeFileTransfer = (sid: string): FileTransfer =>
+    new FileTransfer(
+      async (command, opts) => {
+        const data = await routeToExtension(
+          sid,
+          ToolName.SendCommand,
+          { command, waitMs: opts?.waitMs },
+          'agent'
+        );
+        return data as CommandResultLike;
+      },
+      async (cursor, maxChars) => {
+        const data = await routeToExtension(
+          sid,
+          ToolName.ReadOutput,
+          { cursor, maxChars },
+          'agent'
+        );
+        return data as ReadResultLike;
+      }
+    );
+
+  const transferAuditParams = (tool: string, params: Record<string, unknown>) => {
+    if (tool === ToolName.UploadFile) {
+      return {
+        localPath: params.localPath,
+        remotePath: params.remotePath,
+        overwrite: params.overwrite,
+      };
+    }
+    return { remotePath: params.remotePath, localPath: params.localPath };
+  };
+
+  const handleFileTransfer = async (
+    source: 'mcp' | 'agent' | 'panel',
+    tool: string,
+    params: Record<string, unknown>,
+    sessionId: string | undefined,
+    t0: number
+  ): Promise<unknown> => {
+    const sid = params.sessionId as string;
+    const transfer = makeFileTransfer(sid);
+
+    if (tool === ToolName.DownloadFile) {
+      const remotePath = params.remotePath as string;
+      const data = await transfer.download(remotePath);
+      let localPath =
+        typeof params.localPath === 'string' && params.localPath.trim().length > 0
+          ? params.localPath
+          : '';
+      if (!localPath) {
+        const base = path.basename(remotePath) || 'download.bin';
+        localPath = path.join(
+          paths.downloadsDir,
+          `${new Date().toISOString().replace(/[:.]/g, '-')}-${base}`
+        );
+      }
+      await fsp.mkdir(path.dirname(localPath), { recursive: true });
+      await fsp.writeFile(localPath, data, { mode: 0o600 });
+      await auditAppend({
+        ok: true,
+        params: { remotePath, localPath, bytes: data.length },
+        sessionId,
+        source,
+        tool,
+        startedAt: t0,
+      });
+      recordTranscript(
+        sessionId,
+        source,
+        tool,
+        0,
+        `downloaded ${remotePath} (${data.length} bytes) -> ${localPath}`
+      );
+      return { localPath, bytes: data.length };
+    }
+
+    // UploadFile
+    const localPath = params.localPath as string;
+    const remotePath = params.remotePath as string;
+    const overwrite = params.overwrite === true;
+    const data = await fsp.readFile(localPath);
+    const bytes = await transfer.upload(data, remotePath, overwrite);
+    await auditAppend({
+      ok: true,
+      params: { localPath, remotePath, bytes, overwrite },
+      sessionId,
+      source,
+      tool,
+      startedAt: t0,
+    });
+    recordTranscript(
+      sessionId,
+      source,
+      tool,
+      0,
+      `uploaded ${localPath} -> ${remotePath} (${bytes} bytes)`
+    );
+    return { remotePath, bytes };
+  };
+
   const executeTool = async (
     source: 'mcp' | 'agent' | 'panel',
     tool: string,
@@ -167,27 +321,28 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       throw new Error(`Blocked by approval policy: ${decision.reason}`);
     }
 
-    const ext = pickExtension(sessionId);
-    if (!ext) {
-      throw new Error(
-        'No bastion terminal session is connected. Open a bastion web-terminal tab in the ' +
-          'browser (with the BastionPilot extension granted for that site) and retry.'
-      );
+    // File transfers orchestrate several terminal round trips themselves.
+    if (tool === ToolName.UploadFile || tool === ToolName.DownloadFile) {
+      try {
+        const result = await handleFileTransfer(source, tool, params, sessionId, t0);
+        return result;
+      } catch (err) {
+        await auditAppend({
+          ok: false,
+          error: (err as Error).message,
+          params: transferAuditParams(tool, params),
+          sessionId,
+          source,
+          tool,
+          startedAt: t0,
+        });
+        throw err;
+      }
     }
 
-    const callId = crypto.randomUUID();
-    const timeoutMs =
-      tool === ToolName.SendCommand || tool === ToolName.WaitOutput ? 660_000 : 120_000;
     let data: unknown;
     try {
-      data = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          state.toolPending.delete(callId);
-          reject(new Error(`tool ${tool} timed out in the browser after ${timeoutMs}ms`));
-        }, timeoutMs);
-        state.toolPending.set(callId, { resolve, reject, timer });
-        sendTo(ext, 'tool_call', { callId, source, tool, params });
-      });
+      data = await routeToExtension(sessionId, tool, params, source);
     } catch (err) {
       await auditAppend({
         ok: false,
@@ -231,6 +386,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       tool,
       startedAt: t0,
     });
+    recordTranscript(
+      sessionId,
+      source,
+      tool,
+      (result as Record<string, unknown>)?.exitCode as number | undefined,
+      ((result as Record<string, unknown>)?.text ?? (result as Record<string, unknown>)?.screen) as
+        string | undefined
+    );
     return result;
   };
 

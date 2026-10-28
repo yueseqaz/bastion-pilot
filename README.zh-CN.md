@@ -148,18 +148,19 @@ Provider：
 
 `~/.bastion-pilot/config.json`（由 `bastion-pilot init` 创建）：
 
-| 键                           | 默认值    | 说明                                      |
-| ---------------------------- | --------- | ----------------------------------------- |
-| `server.port`                | `8765`    | daemon 监听端口（始终只绑 `127.0.0.1`）   |
-| `security.token`             | 自动生成  | 插件与 MCP Server 的配对 token            |
-| `approval.mode`              | `confirm` | `auto` / `confirm` / `readonly`           |
-| `approval.confirmTimeoutMs`  | `120000`  | 审批超时即拒绝                            |
-| `approval.readonlyAllowlist` | `[]`      | 正则列表；`readonly` 模式下命中的命令放行 |
-| `providers[]`                | `[]`      | 内置聊天用的 OpenAI 兼容 Provider         |
-| `activeProviderId`           | `null`    | 侧边栏聊天使用的 Provider                 |
-| `agent.maxIterations`        | `30`      | 内置 Agent 循环上限                       |
-| `agent.systemPrompt`         | 内置      | 替换默认的安全优先提示词                  |
-| `output.maxInlineChars`      | `6000`    | 超过则截断 + 落盘                         |
+| 键                           | 默认值    | 说明                                                 |
+| ---------------------------- | --------- | ---------------------------------------------------- |
+| `server.port`                | `8765`    | daemon 监听端口（始终只绑 `127.0.0.1`）              |
+| `security.token`             | 自动生成  | 插件与 MCP Server 的配对 token                       |
+| `approval.mode`              | `confirm` | `auto` / `confirm` / `readonly`                      |
+| `approval.confirmTimeoutMs`  | `120000`  | 审批超时即拒绝                                       |
+| `approval.readonlyAllowlist` | `[]`      | 正则列表；`readonly` 模式下命中的命令放行            |
+| `providers[]`                | `[]`      | 内置聊天用的 OpenAI 兼容 Provider                    |
+| `activeProviderId`           | `null`    | 侧边栏聊天使用的 Provider                            |
+| `agent.maxIterations`        | `30`      | 内置 Agent 循环上限                                  |
+| `agent.systemPrompt`         | 内置      | 替换默认的安全优先提示词                             |
+| `output.maxInlineChars`      | `6000`    | 超过则截断 + 落盘                                    |
+| `transcripts.enabled`        | `true`    | 按会话记录终端转录到 `~/.bastion-pilot/transcripts/` |
 
 插件侧设置（选项页）：daemon URL、配对 token、已授权 origin 及每个 origin 的站点 profile
 （`generic-xterm` / `jumpserver`）。
@@ -205,11 +206,14 @@ profiles            适配更多堡垒机产品的说明
 
 ## 路线图
 
-- [ ] 通过终端传文件（base64 分块、`rz/sz` 识别）
-- [ ] 单标签多会话、iframe 型终端
-- [ ] 更多站点 profile（齐治、阿里云堡垒机、Teleport、Guacamole 兜底）
-- [ ] bridge 发 npm（`npx bastion-pilot`）
-- [ ] 会话回放，便于事后复盘
+- [x] 通过终端传文件（`upload_file` / `download_file`，base64 分块）
+- [x] iframe 型终端（每个终端 iframe 一个会话）
+- [x] 更多站点 profile —— Teleport、齐治、阿里云堡垒机（实验性，欢迎实测反馈）
+- [x] 会话转录回放（`bastion-pilot transcripts`）
+- [x] bridge 包已就绪可发布 npm（`cd packages/bridge && npm publish`）
+- [ ] 正式发布 npm + `npx bastion-pilot mcp`（需要维护者的 npm 账号）
+- [ ] 非 xterm 终端的视觉兜底（Guacamole 类 canvas 流）
+- [ ] 单个浏览器 frame 内的多终端
 
 ## 许可证
 

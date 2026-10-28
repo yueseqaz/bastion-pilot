@@ -40,6 +40,7 @@ export interface BastionPilotConfig {
   activeProviderId: string | null;
   agent: { maxIterations: number; systemPrompt?: string };
   output: { maxInlineChars: number };
+  transcripts: { enabled: boolean };
 }
 
 const providerSchema = z.object({
@@ -72,6 +73,7 @@ const configSchema = z.object({
     })
     .optional(),
   output: z.object({ maxInlineChars: z.number().int().min(500) }).optional(),
+  transcripts: z.object({ enabled: z.boolean() }).optional(),
 });
 
 export function defaultConfig(): BastionPilotConfig {
@@ -87,6 +89,7 @@ export function defaultConfig(): BastionPilotConfig {
     activeProviderId: null,
     agent: { maxIterations: 30 },
     output: { maxInlineChars: 6000 },
+    transcripts: { enabled: true },
   };
 }
 
@@ -103,6 +106,7 @@ function mergeConfig(
       user.activeProviderId !== undefined ? user.activeProviderId : base.activeProviderId,
     agent: { ...base.agent, ...user.agent },
     output: { ...base.output, ...user.output },
+    transcripts: { ...base.transcripts, ...user.transcripts },
   };
 }
 
@@ -113,6 +117,8 @@ export function configPaths(home: string) {
     auditDir: path.join(home, 'audit'),
     outputsDir: path.join(home, 'outputs'),
     chatsDir: path.join(home, 'chats'),
+    transcriptsDir: path.join(home, 'transcripts'),
+    downloadsDir: path.join(home, 'downloads'),
   };
 }
 

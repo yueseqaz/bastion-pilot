@@ -1,33 +1,54 @@
 {
-  "name": "@bastion-pilot/bridge",
-  "version": "0.1.0",
-  "private": true,
+  "name": "bastion-pilot",
+  "version": "0.2.0",
   "type": "module",
-  "description": "BastionPilot local bridge: daemon (WS hub, approvals, audit) + MCP server + built-in agent loop",
+  "description": "BastionPilot local bridge: daemon (WS hub, approvals, audit) + MCP server + built-in agent loop. Bring AI agents to bastion-host web terminals.",
+  "license": "MIT",
   "bin": {
     "bastion-pilot": "./dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "bastion",
+    "jumpserver",
+    "mcp",
+    "model-context-protocol",
+    "claude-code",
+    "codex",
+    "ai-agent",
+    "web-terminal",
+    "devops"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yueseqaz/bastion-pilot.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "node scripts/build.mjs && chmod +x dist/cli.js",
+    "prepublishOnly": "pnpm build && pnpm typecheck && pnpm test",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint ."
   },
-  "dependencies": {
+  "devDependencies": {
     "@bastion-pilot/protocol": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.5.10",
     "commander": "^13.0.0",
+    "esbuild": "^0.25.0",
+    "vitest": "^3.2.0",
     "ws": "^8.18.0",
     "zod": "^3.25.76",
     "zod-to-json-schema": "^3.24.0"
-  },
-  "devDependencies": {
-    "@types/node": "^24.0.0",
-    "@types/ws": "^8.5.10",
-    "esbuild": "^0.25.0",
-    "vitest": "^3.2.0"
   }
 }

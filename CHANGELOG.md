@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-10-29
+
+### Added
+
+- `upload_file` / `download_file` tools: file transfer through the terminal via base64 chunks
+  (heredoc batching on upload, cursor-chained capture and pure-base64 extraction on download),
+  64 MB per-file cap, overwrite protection, downloads stored with mode 600.
+- Per-session terminal transcripts: every tool result is appended to
+  `~/.bastion-pilot/transcripts/<sessionId>.log` for post-incident replay; disable with
+  `transcripts.enabled: false`; inspect with the new `bastion-pilot transcripts [id] [--tail N]`
+  command.
+- iframe-based terminals: content scripts now inject into all frames, so terminals embedded in
+  an iframe (e.g. JumpServer luna layouts) hook as their own session, marked `· frame` in the
+  side panel.
+- Experimental site profiles: Teleport, Qizhi (齐治), Aliyun Bastionhost (raw xterm.js framing,
+  product-specific DOM hints).
+- npm publish readiness for the bridge package (`bastion-pilot`): bin, files, repository,
+  engines, publishConfig and `prepublishOnly`; the bundle is fully self-contained so
+  `npx bastion-pilot mcp` works once published.
+
+### Changed
+
+- Config gains the `transcripts.enabled` switch (default on).
+- Versions bumped to 0.2.0 across the monorepo and the extension manifest.
+
 ## [0.1.0] - 2026-10-29
 
 Initial release.

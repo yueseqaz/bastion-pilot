@@ -182,12 +182,14 @@ class TabController {
     firstFrame: string | ArrayBuffer
   ) {
     const profile = pickProfile(this.settings ?? { daemonUrl: '', token: '', sites: [] });
+    const isFrame = window.top !== window;
+    const title = (document.title || location.host || 'terminal') + (isFrame ? ' · frame' : '');
     this.session = new TerminalSession(
       socketId,
       profile,
       (data) => this.writeSocket(socketId, data),
       location.href,
-      document.title || location.host
+      title
     );
     this.session.feed(firstFrame);
     void this.registerWithWorker();

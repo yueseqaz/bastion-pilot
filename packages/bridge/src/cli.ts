@@ -3,6 +3,7 @@ import { configPaths, loadConfig, resolveHome, type BastionPilotConfig } from '.
 import { startDaemon } from './daemon.js';
 import { isPortServing } from './hubClient.js';
 import { runMcpServer } from './mcpServer.js';
+import { TranscriptRecorder } from './transcripts.js';
 import { VERSION } from './version.js';
 
 const program = new Command();
@@ -49,6 +50,37 @@ program
     process.exitCode = ok ? 0 : 1;
   });
 
+program
+  .command('transcripts')
+  .description('List recorded terminal transcripts, or show one by session id')
+  .argument('[sessionId]', 'show the transcript of this session instead of listing all')
+  .option('--tail <lines>', 'only print the last N lines', (v) => Number.parseInt(v, 10))
+  .action((sessionId: string | undefined, opts: { tail?: number }) => {
+    const paths = configPaths(resolveHome());
+    const recorder = new TranscriptRecorder(paths.transcriptsDir);
+    if (!sessionId) {
+      const list = recorder.list();
+      if (list.length === 0) {
+        console.log('No transcripts recorded yet (enable via config: transcripts.enabled).');
+        return;
+      }
+      console.log(`${list.length} transcript(s) in ${paths.transcriptsDir}:\n`);
+      for (const item of list) {
+        console.log(
+          `  ${item.sessionId.padEnd(28)} ${String(item.bytes).padStart(12)} bytes  ${item.modified}`
+        );
+      }
+      return;
+    }
+    const content = recorder.read(sessionId, opts.tail);
+    if (content === null) {
+      console.error(`no transcript for session ${sessionId}`);
+      process.exitCode = 1;
+      return;
+    }
+    process.stdout.write(content);
+  });
+
 program.parseAsync(process.argv).catch((err) => {
   console.error((err as Error).message);
   process.exit(1);
@@ -66,6 +98,9 @@ Config:  ${configPath} ${created ? '(created; contains a fresh pairing token)' :
 Daemon:  ${url}
 Audit:   ${paths.auditDir}
 Outputs: ${paths.outputsDir}
+Chats:   ${paths.chatsDir}
+Transcripts: ${paths.transcriptsDir}
+Downloads:   ${paths.downloadsDir}
 
 Pairing token (paste into the extension options page):
   ${config.security.token}

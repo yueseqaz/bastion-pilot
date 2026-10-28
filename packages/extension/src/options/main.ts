@@ -198,6 +198,9 @@ function renderSites() {
     for (const profile of [
       { id: 'generic-xterm', name: 'Generic xterm.js' },
       { id: 'jumpserver', name: 'JumpServer' },
+      { id: 'teleport', name: 'Teleport (experimental)' },
+      { id: 'qizhi', name: 'Qizhi 齐治 (experimental)' },
+      { id: 'aliyun-bastionhost', name: 'Aliyun Bastionhost (experimental)' },
     ]) {
       const option = document.createElement('option');
       option.value = profile.id;

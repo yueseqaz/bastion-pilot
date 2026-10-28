@@ -64,7 +64,9 @@ Claude Code / Codex            Side-panel chat
 | Built-in side-panel chat             | any OpenAI-compatible endpoint (cloud or self-hosted/intranet) |
 
 Tools exposed to agents: `list_sessions`, `send_command`, `read_output`, `wait_output`,
-`send_key`, `get_screen` — see [docs/tools.md](./docs/tools.md) for the full contract.
+`send_key`, `get_screen`, `upload_file`, `download_file` — see
+[docs/tools.md](./docs/tools.md) for the full contract. Every tool result is also appended to
+per-session transcripts for post-incident review (`bastion-pilot transcripts`).
 
 Safety rails:
 
@@ -159,18 +161,19 @@ the same shape — the terminal output never has to leave your network if you do
 
 `~/.bastion-pilot/config.json` (created by `bastion-pilot init`):
 
-| Key                          | Default   | Meaning                                                      |
-| ---------------------------- | --------- | ------------------------------------------------------------ |
-| `server.port`                | `8765`    | daemon listen port (always bound to `127.0.0.1`)             |
-| `security.token`             | generated | pairing token for the extension & MCP server                 |
-| `approval.mode`              | `confirm` | `auto` / `confirm` / `readonly`                              |
-| `approval.confirmTimeoutMs`  | `120000`  | unanswered approvals are denied after this                   |
-| `approval.readonlyAllowlist` | `[]`      | regex list; in `readonly` mode matching commands are allowed |
-| `providers[]`                | `[]`      | OpenAI-compatible providers for the built-in chat            |
-| `activeProviderId`           | `null`    | provider used by the side panel                              |
-| `agent.maxIterations`        | `30`      | loop cap for the built-in agent                              |
-| `agent.systemPrompt`         | built-in  | replace the default safety-first prompt                      |
-| `output.maxInlineChars`      | `6000`    | larger outputs are truncated + saved to a file               |
+| Key                          | Default   | Meaning                                                                |
+| ---------------------------- | --------- | ---------------------------------------------------------------------- |
+| `server.port`                | `8765`    | daemon listen port (always bound to `127.0.0.1`)                       |
+| `security.token`             | generated | pairing token for the extension & MCP server                           |
+| `approval.mode`              | `confirm` | `auto` / `confirm` / `readonly`                                        |
+| `approval.confirmTimeoutMs`  | `120000`  | unanswered approvals are denied after this                             |
+| `approval.readonlyAllowlist` | `[]`      | regex list; in `readonly` mode matching commands are allowed           |
+| `providers[]`                | `[]`      | OpenAI-compatible providers for the built-in chat                      |
+| `activeProviderId`           | `null`    | provider used by the side panel                                        |
+| `agent.maxIterations`        | `30`      | loop cap for the built-in agent                                        |
+| `agent.systemPrompt`         | built-in  | replace the default safety-first prompt                                |
+| `output.maxInlineChars`      | `6000`    | larger outputs are truncated + saved to a file                         |
+| `transcripts.enabled`        | `true`    | per-session terminal transcripts under `~/.bastion-pilot/transcripts/` |
 
 Extension-side settings (options page): daemon URL, pairing token, granted origins and the site
 profile per origin (`generic-xterm` / `jumpserver`).
@@ -217,11 +220,14 @@ with your company's policies** — including whether terminal output may be sent
 
 ## Roadmap
 
-- [ ] File upload/download over the terminal (base64 chunks, `rz/sz` detection)
-- [ ] Multiple terminal sessions per tab, iframe-based terminals
-- [ ] More site profiles (Qizhi, Aliyun Bastionhost, Teleport, Guacamole fallback)
-- [ ] npm distribution for the bridge (`npx bastion-pilot`)
-- [ ] Session transcripts replay for post-incident review
+- [x] File upload/download over the terminal (`upload_file` / `download_file`, base64 chunks)
+- [x] iframe-based terminals (one session per terminal frame)
+- [x] More site profiles — Teleport, Qizhi, Aliyun Bastionhost (experimental, field-test welcome)
+- [x] Session transcripts replay for post-incident review (`bastion-pilot transcripts`)
+- [x] npm publish-ready bridge package (`cd packages/bridge && npm publish`)
+- [ ] Published npm package + `npx bastion-pilot mcp` (needs the maintainer's npm account)
+- [ ] Vision fallback for non-xterm terminals (Guacamole-style canvas streaming)
+- [ ] Multiple terminals inside a single browser frame
 
 ## License
 
