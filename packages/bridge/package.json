@@ -1,0 +1,33 @@
+{
+  "name": "@bastion-pilot/bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "BastionPilot local bridge: daemon (WS hub, approvals, audit) + MCP server + built-in agent loop",
+  "bin": {
+    "bastion-pilot": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs && chmod +x dist/cli.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@bastion-pilot/protocol": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "commander": "^13.0.0",
+    "ws": "^8.18.0",
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.5.10",
+    "esbuild": "^0.25.0",
+    "vitest": "^3.2.0"
+  }
+}

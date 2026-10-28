@@ -89,6 +89,18 @@ export const ClientMessage = z.discriminatedUnion('type', [
     v: z.literal(1),
     id: z.string(),
     ts: z.number(),
+    type: z.literal('tool_call'),
+    payload: z.object({
+      callId: z.string(),
+      source: z.enum(['mcp', 'agent', 'panel']),
+      tool: z.string(),
+      params: z.record(z.unknown()),
+    }),
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
     type: z.literal('providers_list_get'),
     payload: z.object({}).passthrough(),
   }),
@@ -155,6 +167,18 @@ export const DaemonMessage = z.discriminatedUnion('type', [
       source: z.enum(['mcp', 'agent', 'panel']),
       tool: z.string(),
       params: z.record(z.unknown()),
+    }),
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
+    type: z.literal('tool_result'),
+    payload: z.object({
+      callId: z.string(),
+      ok: z.boolean(),
+      data: z.unknown().optional(),
+      error: z.string().optional(),
     }),
   }),
   z.object({
