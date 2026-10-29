@@ -22,6 +22,22 @@ export async function runMcpServer(): Promise<void> {
       token: config.security.token,
       name: 'mcp-server',
       version: VERSION,
+      // MCP hosts normally spawn one process per conversation. Preserve that
+      // identity so the panel can target one Codex/Claude conversation rather
+      // than broadcasting a request to every connected agent.
+      agentId:
+        process.env.BASTION_PILOT_AGENT_ID ??
+        `${process.env.BASTION_PILOT_AGENT_NAME ?? 'mcp'}-${process.pid}`,
+      conversationId:
+        process.env.BASTION_PILOT_CONVERSATION_ID ??
+        process.env.CODEX_THREAD_ID ??
+        process.env.CODEX_SESSION_ID ??
+        process.env.CLAUDE_SESSION_ID,
+      label:
+        process.env.BASTION_PILOT_AGENT_LABEL ??
+        process.env.CODEX_THREAD_TITLE ??
+        process.env.CLAUDE_SESSION_NAME ??
+        (process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID ? 'Codex 对话' : undefined),
       spawnDaemon: {
         command: process.execPath,
         args: [selfCliPath(), 'daemon'],
@@ -32,7 +48,13 @@ export async function runMcpServer(): Promise<void> {
   );
   await hub.connect();
 
-  const server = new McpServer({ name: 'bastion-pilot', version: VERSION });
+  const server = new McpServer(
+    { name: 'bastion-pilot', version: VERSION },
+    {
+      instructions:
+        'BastionPilot shares conversation context with its browser side panel. At the start of a related task call get_shared_context; after forming a plan or reaching a conclusion call append_shared_context. When a panel user message includes a requestId, echo that requestId in your assistant append_shared_context response so the panel can correlate the reply. Shared context is background only: always call list_sessions and verify live terminal state before reporting current facts.',
+    }
+  );
   for (const tool of TOOLS) {
     server.registerTool(
       tool.name,

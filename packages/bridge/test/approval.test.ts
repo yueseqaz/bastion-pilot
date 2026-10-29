@@ -7,7 +7,12 @@ function engine(
   allowlist: string[] = []
 ) {
   return new ApprovalEngine(
-    { mode, confirmTimeoutMs: 200, readonlyAllowlist: allowlist },
+    {
+      mode,
+      requireUserApproval: mode === 'confirm',
+      confirmTimeoutMs: 200,
+      readonlyAllowlist: allowlist,
+    },
     gate
       ? async (req) =>
           gate({ summary: req.summary }).then((approved) => {

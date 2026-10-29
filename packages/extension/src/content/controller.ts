@@ -281,7 +281,8 @@ class TabController {
     try {
       this.port.postMessage({ kind: 'sessions', sessions: [info] });
     } catch {
-      /* ignore */
+      // The service worker may have restarted between the null check and send.
+      this.port = null;
     }
   }
 

@@ -29,7 +29,21 @@ export const HelloPayload = z.object({
   role: z.enum(['extension', 'brain']),
   name: z.string().default('unknown'),
   version: z.string().default('0'),
+  /** Stable identity for a local-agent process/conversation. */
+  agentId: z.string().min(1).optional(),
+  conversationId: z.string().min(1).optional(),
+  label: z.string().min(1).max(120).optional(),
 });
+
+export const LocalAgentInfoSchema = z.object({
+  agentId: z.string(),
+  name: z.string(),
+  label: z.string(),
+  conversationId: z.string().optional(),
+  connectedAt: z.number(),
+  lastSeenAt: z.number(),
+});
+export type LocalAgentInfo = z.infer<typeof LocalAgentInfoSchema>;
 
 export const SessionInfoLikeSchema = z.object({
   sessionId: z.string(),
@@ -45,6 +59,33 @@ export const ProviderInfoSchema = z.object({
   id: z.string(),
   label: z.string(),
   model: z.string(),
+});
+
+/** Provider settings exchanged with the authenticated options page. */
+export const ProviderConfigSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().optional(),
+  baseUrl: z.string().url(),
+  apiKey: z.string(),
+  model: z.string().min(1),
+  stream: z.boolean().optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().int().positive().optional(),
+});
+
+export const ProviderConfigsPayloadSchema = z.object({
+  providers: z.array(ProviderConfigSchema),
+  activeProviderId: z.string().nullable(),
+});
+
+/** Request a model list from an OpenAI-compatible endpoint before saving a provider. */
+export const ProviderModelsRequestSchema = z.object({
+  baseUrl: z.string().url(),
+  apiKey: z.string(),
+});
+
+export const ProviderModelsPayloadSchema = z.object({
+  models: z.array(z.string()),
 });
 
 export const ChatStopReasonSchema = z.enum(['end', 'aborted', 'error', 'max_iterations']);
@@ -108,8 +149,35 @@ export const ClientMessage = z.discriminatedUnion('type', [
     v: z.literal(1),
     id: z.string(),
     ts: z.number(),
+    type: z.literal('provider_configs_get'),
+    payload: z.object({}).passthrough(),
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
+    type: z.literal('provider_configs_update'),
+    payload: ProviderConfigsPayloadSchema,
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
+    type: z.literal('provider_models_get'),
+    payload: ProviderModelsRequestSchema,
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
     type: z.literal('chat_new'),
-    payload: z.object({ providerId: z.string().optional() }),
+    payload: z.object({
+      providerId: z.string().optional(),
+      /** Bind this conversation to the terminal selected in the panel. */
+      sessionId: z.string().min(1).optional(),
+      /** Explicitly discard any persisted transcript and start clean. */
+      fresh: z.boolean().optional(),
+    }),
   }),
   z.object({
     v: z.literal(1),
@@ -124,6 +192,29 @@ export const ClientMessage = z.discriminatedUnion('type', [
     ts: z.number(),
     type: z.literal('chat_abort'),
     payload: z.object({ chatId: z.string() }),
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
+    type: z.literal('shared_context_append'),
+    payload: z.object({
+      role: z.enum(['user', 'assistant', 'tool', 'note']),
+      content: z.string().min(1),
+      chatId: z.string().optional(),
+      targetAgentId: z.string().min(1).optional(),
+      requestId: z.string().min(1).optional(),
+    }),
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
+    type: z.literal('shared_context_get'),
+    payload: z.object({
+      limit: z.number().int().positive().max(100).optional(),
+      targetAgentId: z.string().min(1).optional(),
+    }),
   }),
   z.object({
     v: z.literal(1),
@@ -195,6 +286,30 @@ export const DaemonMessage = z.discriminatedUnion('type', [
     v: z.literal(1),
     id: z.string(),
     ts: z.number(),
+    type: z.literal('provider_configs'),
+    payload: ProviderConfigsPayloadSchema,
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
+    type: z.literal('provider_configs_saved'),
+    payload: z.object({
+      activeProviderId: z.string().nullable(),
+      providerCount: z.number().int().nonnegative(),
+    }),
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
+    type: z.literal('provider_models'),
+    payload: ProviderModelsPayloadSchema,
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
     type: z.literal('chat_created'),
     payload: z.object({ chatId: z.string() }),
   }),
@@ -253,6 +368,56 @@ export const DaemonMessage = z.discriminatedUnion('type', [
       chatId: z.string(),
       stopReason: ChatStopReasonSchema,
       error: z.string().optional(),
+    }),
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
+    type: z.literal('shared_context_event'),
+    payload: z.object({
+      entry: z.object({
+        id: z.string(),
+        ts: z.string(),
+        source: z.enum(['panel', 'mcp', 'agent']),
+        role: z.enum(['user', 'assistant', 'tool', 'note']),
+        content: z.string(),
+        chatId: z.string().optional(),
+        targetAgentId: z.string().optional(),
+        requestId: z.string().optional(),
+      }),
+    }),
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
+    type: z.literal('shared_context_replay'),
+    payload: z.object({
+      entries: z.array(
+        z.object({
+          id: z.string(),
+          ts: z.string(),
+          source: z.enum(['panel', 'mcp', 'agent']),
+          role: z.enum(['user', 'assistant', 'tool', 'note']),
+          content: z.string(),
+          chatId: z.string().optional(),
+          targetAgentId: z.string().optional(),
+          requestId: z.string().optional(),
+        })
+      ),
+    }),
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
+    type: z.literal('agent_status'),
+    payload: z.object({
+      connected: z.boolean(),
+      brainsConnected: z.number().int().nonnegative(),
+      names: z.array(z.string()),
+      agents: z.array(LocalAgentInfoSchema).default([]),
     }),
   }),
   z.object({

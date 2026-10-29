@@ -25,6 +25,7 @@ interface Settings {
   token: string;
   sites: SiteEntry[];
   defaultWaitMs?: number;
+  chatMode?: 'provider' | 'agent';
 }
 
 interface PendingApproval {
@@ -214,11 +215,24 @@ class SessionRegistry {
 const pendingTools = new Map<string, PendingTool>();
 const pendingApprovals = new Map<string, PendingApproval>();
 const panelPorts = new Set<chrome.runtime.Port>();
+let agentConnected = false;
+let agentNames: string[] = [];
+let agents: Array<{
+  agentId: string;
+  name: string;
+  label: string;
+  conversationId?: string;
+  connectedAt: number;
+  lastSeenAt: number;
+}> = [];
 
 function broadcastState() {
   const state = {
     kind: 'state',
     connected: daemon.connected,
+    agentConnected,
+    agentNames,
+    agents,
     sessions: registry.list(),
     approvals: [...pendingApprovals.values()],
   };
@@ -252,7 +266,14 @@ const registry = new SessionRegistry();
 
 const daemon = new DaemonConnection(
   (msg) => void onDaemonMessage(msg),
-  () => broadcastState()
+  (connected) => {
+    if (!connected) {
+      agentConnected = false;
+      agentNames = [];
+      agents = [];
+    }
+    broadcastState();
+  }
 );
 
 async function onDaemonMessage(msg: DaemonMessage) {
@@ -278,11 +299,20 @@ async function onDaemonMessage(msg: DaemonMessage) {
       notifyApproval(req);
       return;
     }
+    case 'agent_status':
+      agentConnected = msg.payload.connected;
+      agentNames = msg.payload.names;
+      agents = msg.payload.agents;
+      broadcastState();
+      return;
     case 'chat_created':
+    case 'chat_replay':
     case 'chat_delta':
     case 'chat_tool_call':
     case 'chat_tool_result':
     case 'chat_done':
+    case 'shared_context_event':
+    case 'shared_context_replay':
     case 'providers_list':
     case 'error':
       forwardToPanels({ kind: 'chat-event', message: msg });
@@ -399,14 +429,22 @@ chrome.runtime.onConnect.addListener((port) => {
       (msg: {
         kind?: string;
         providerId?: string;
+        sessionId?: string;
+        fresh?: boolean;
         chatId?: string;
         text?: string;
+        targetAgentId?: string;
         requestId?: string;
+        limit?: number;
         approved?: boolean;
       }) => {
         switch (msg.kind) {
           case 'chat-new':
-            daemon.send('chat_new', { providerId: msg.providerId });
+            daemon.send('chat_new', {
+              providerId: msg.providerId,
+              sessionId: msg.sessionId,
+              fresh: msg.fresh === true,
+            });
             break;
           case 'chat-message':
             if (msg.chatId && msg.text)
@@ -414,6 +452,22 @@ chrome.runtime.onConnect.addListener((port) => {
             break;
           case 'chat-abort':
             if (msg.chatId) daemon.send('chat_abort', { chatId: msg.chatId });
+            break;
+          case 'agent-message':
+            if (msg.text)
+              daemon.send('shared_context_append', {
+                role: 'user',
+                content: msg.text,
+                chatId: msg.chatId,
+                targetAgentId: msg.targetAgentId,
+                requestId: msg.requestId,
+              });
+            break;
+          case 'get-shared-context':
+            daemon.send('shared_context_get', {
+              limit: msg.limit ?? 50,
+              targetAgentId: msg.targetAgentId,
+            });
             break;
           case 'approval-response':
             if (msg.requestId) {
@@ -431,6 +485,9 @@ chrome.runtime.onConnect.addListener((port) => {
               port.postMessage({
                 kind: 'state',
                 connected: daemon.connected,
+                agentConnected,
+                agentNames,
+                agents,
                 sessions: registry.list(),
                 approvals: [...pendingApprovals.values()],
               });

@@ -42,6 +42,35 @@ Rules:
 - Abort runaway commands with send_key ctrl+c instead of opening new sessions.
 - Every action is audit-logged by the bastion host. Act with the care of a production operator and explain what you are doing.`;
 
+export const LIVE_STATE_POLICY = `History is background knowledge, never proof of the current terminal state.
+- For every request to inspect or operate the server, discover the current sessions again and execute the relevant command in THIS user turn before stating a result. A previous successful command is not verification for a new turn.
+- For the current directory run pwd; for current files run ls; verify service, process, disk, network and log state with the corresponding live command. Never infer a path from a prompt, username, old tool output or a previous assistant answer.
+- If execution is denied, fails, is stopped, or no session is available, explicitly say the current state could not be confirmed. Do not substitute historical results or claim a command ran when it did not.
+- Historical results may explain background and earlier decisions. Clearly label any explicitly requested historical information as historical, not current.
+- Do not repeat modifying commands merely to refresh state. Verify their effects with read-only commands. Prefer read-only inspection and preserve the approval policy.
+- Reply in Chinese unless the user requests another language.`;
+
+/** A backstop for common live-state requests; the policy applies to all turns. */
+export function needsLiveCommand(text: string): boolean {
+  if (/^(?:你好|您好|hi|hello|谢谢|thanks)[!！。,.，\s]*$/i.test(text)) return false;
+  if (
+    /不要执行|不用执行|无需执行|别执行|不要运行|不要操作|只解释|仅解释|do not (?:run|execute)|don't (?:run|execute)/i.test(
+      text
+    )
+  )
+    return false;
+  if (
+    /历史|上次|之前|刚才|解释|什么意思|怎么用|如何使用|示例|举例|原理|概念|知识|背景|架构|what (?:does|is).*mean/i.test(
+      text
+    ) &&
+    !/重新|再查|执行|运行|现在|当前|实时|检查|查看|看看/.test(text)
+  )
+    return false;
+  return /目录|文件夹|文件|服务器|磁盘|进程|服务|日志|端口|内存|负载|网络|检查|查看|看看|执行|运行|\b(?:pwd|ls|df|ps|du|systemctl|uptime|free|whoami|check|inspect|run|execute|current|directory|files|disk|process|service|logs|ports)\b/i.test(
+    text
+  );
+}
+
 export interface AgentLoopOptions {
   provider: ProviderConfig;
   tools?: ToolDescriptor[];
@@ -95,14 +124,41 @@ export class AgentLoop {
     hooks: LoopHooks;
   }): Promise<LoopResult> {
     const work: ChatMessage[] = [...input.messages];
+    const lastUser = [...work].reverse().find((message) => message.role === 'user');
+    let requireLive = needsLiveCommand(lastUser?.content ?? '');
+    let discovered = false;
     const maxIterations = this.opts.maxIterations ?? 30;
     try {
       for (let iteration = 0; iteration < maxIterations; iteration++) {
         if (input.signal.aborted) return { messages: work, stopReason: 'aborted' };
 
-        const { content, toolCalls } = await this.chat(work, input.signal, input.hooks);
+        const requiredTool = requireLive
+          ? discovered
+            ? 'send_command'
+            : 'list_sessions'
+          : undefined;
+        // Do not stream an unverified answer if a provider ignores tool_choice.
+        const responseHooks = requiredTool ? { ...input.hooks, onDelta() {} } : input.hooks;
+        const { content, toolCalls } = await this.chat(
+          work,
+          input.signal,
+          responseHooks,
+          requiredTool
+        );
+        if (input.signal.aborted) return { messages: work, stopReason: 'aborted' };
+
+        if (requiredTool && (toolCalls.length !== 1 || toolCalls[0]?.name !== requiredTool)) {
+          return {
+            messages: work,
+            stopReason: 'error',
+            error: 'AI 未执行本轮实时核验，无法确认当前状态。请重试，或检查模型是否支持工具调用。',
+          };
+        }
 
         if (toolCalls.length === 0) {
+          // Keep the final assistant turn in the persisted transcript even
+          // when the model answers without invoking a tool.
+          work.push({ role: 'assistant', content: content ?? '' });
           return { messages: work, stopReason: 'end' };
         }
 
@@ -133,10 +189,18 @@ export class AgentLoop {
           try {
             const data = await this.opts.executeTool('agent', tc.name, params);
             text = this.opts.renderResult(tc.name, data);
+            if (tc.name === 'list_sessions') {
+              discovered = true;
+              const sessions = (data as { sessions?: unknown[] } | null)?.sessions;
+              if (Array.isArray(sessions) && sessions.length === 0) requireLive = false;
+            }
           } catch (err) {
             ok = false;
             text = `ERROR: ${(err as Error).message}`;
+            // Report a failed/denied observation instead of looping or using old data.
+            requireLive = false;
           }
+          if (tc.name === 'send_command') requireLive = false;
           input.hooks.onToolResult(callId, tc.name, ok, summarizeForPanel(text));
           work.push({ role: 'tool', tool_call_id: callId, content: text });
         }
@@ -157,7 +221,8 @@ export class AgentLoop {
   private async chat(
     messages: ChatMessage[],
     signal: AbortSignal,
-    hooks: LoopHooks
+    hooks: LoopHooks,
+    requiredTool?: string
   ): Promise<{ content: string | null; toolCalls: AccumulatedToolCall[] }> {
     const maxRetries = this.opts.maxRetries ?? 2;
     let emitted = false;
@@ -170,7 +235,7 @@ export class AgentLoop {
     };
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.chatOnce(messages, signal, guardedHooks);
+        return await this.chatOnce(messages, signal, guardedHooks, requiredTool);
       } catch (err) {
         if (signal.aborted || emitted || attempt >= maxRetries || !this.isRetryable(err)) {
           throw err;
@@ -212,18 +277,39 @@ export class AgentLoop {
   private async chatOnce(
     messages: ChatMessage[],
     signal: AbortSignal,
-    hooks: LoopHooks
+    hooks: LoopHooks,
+    requiredTool?: string
   ): Promise<{ content: string | null; toolCalls: AccumulatedToolCall[] }> {
     const { provider } = this.opts;
     const base = provider.baseUrl.replace(/\/+$/, '');
     const stream = provider.stream !== false;
     const systemPrompt = this.opts.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
+    const context = this.trimForContext(messages);
+    let turnStart = context.length - 1;
+    while (turnStart >= 0 && context[turnStart]?.role !== 'user') turnStart--;
+    // The boundary is request-only: never alter persisted history or tool-call pairs.
+    const markedContext =
+      turnStart < 0
+        ? context
+        : [
+            ...context.slice(0, turnStart),
+            {
+              role: 'system',
+              content:
+                'CURRENT USER TURN STARTS HERE. Everything before this boundary is historical background, not a current observation. Only tool results after this boundary can verify the current state.',
+            },
+            ...context.slice(turnStart),
+          ];
     const body: Record<string, unknown> = {
       model: provider.model,
-      messages: [{ role: 'system', content: systemPrompt }, ...this.trimForContext(messages)],
+      messages: [
+        { role: 'system', content: `${systemPrompt}\n\n${LIVE_STATE_POLICY}` },
+        ...markedContext,
+      ],
       tools: this.toolsParam,
       stream,
     };
+    if (requiredTool) body.tool_choice = { type: 'function', function: { name: requiredTool } };
     if (provider.temperature !== undefined) body.temperature = provider.temperature;
     if (provider.maxTokens !== undefined) body.max_tokens = provider.maxTokens;
 
@@ -241,12 +327,13 @@ export class AgentLoop {
       throw new ProviderHttpError(res.status, `provider returned HTTP ${res.status}: ${detail}`);
     }
 
-    if (!stream || !res.body) {
+    if (!stream || !res.body || res.headers.get('content-type')?.includes('application/json')) {
       const json = (await res.json()) as {
         choices?: Array<{ message?: { content?: string | null; tool_calls?: unknown[] } }>;
       };
       const message = json.choices?.[0]?.message;
       const toolCalls = normalizeToolCalls(message?.tool_calls ?? []);
+      if (message?.content) hooks.onDelta(message.content);
       return { content: message?.content ?? null, toolCalls };
     }
 

@@ -57,7 +57,8 @@ Claude Code / Codex            侧边栏聊天
 | 内置侧边栏聊天                        | 任意 OpenAI 兼容端点（云端或自建/内网） |
 
 暴露给 Agent 的工具：`list_sessions`、`send_command`、`read_output`、`wait_output`、
-`send_key`、`get_screen` —— 完整契约见 [docs/tools.md](./docs/tools.md)。
+`send_key`、`get_screen`、`upload_file`、`download_file` —— 完整契约见
+[docs/tools.md](./docs/tools.md)。
 
 安全机制：
 
@@ -124,8 +125,19 @@ args = ["/绝对路径/bastion-pilot/packages/bridge/dist/cli.js", "mcp"]
 然后就可以在 Agent 里说：_“列出堡垒机会话，然后在 web-01 上看看磁盘占用。”_ Agent 会先调
 `list_sessions`，再 `send_command df -h`，读输出、给结论——全程受你的审批模式约束。
 
-**内置侧边栏聊天**（可选）— 在 `~/.bastion-pilot/config.json` 里加一个 OpenAI 兼容
-Provider：
+### 与插件共享会话
+
+MCP 客户端还会看到两个共享上下文工具：
+
+- `get_shared_context`：读取侧边栏和其他本地 Agent 最近的任务、计划和结果。
+- `append_shared_context`：把本地 Agent 的计划、发现或最终结论写回侧边栏。
+
+共享上下文会保存到 `~/.bastion-pilot/shared-context.json`，侧边栏会实时显示来自本地 Agent 的消息。
+它只同步对话背景；当前目录、文件和服务状态仍必须重新调用终端工具确认。
+
+**内置侧边栏聊天**（可选）— 打开插件的 **设置 → AI 服务商**，选择“添加 API Key 服务”，
+只填写接口 URL 和 API Key，然后点击“获取模型”并选择模型。模型不需要手工输入。
+也可以直接编辑 `~/.bastion-pilot/config.json`：
 
 ```json
 {
@@ -141,8 +153,20 @@ Provider：
 }
 ```
 
+打开侧边栏后，顶部的“模式”下拉框可以在 **API Key** 和 **本地 Agent** 之间二选一。API Key
+模式由 BastionPilot 直接调用上面的 Provider；本地 Agent 模式会列出通过 BastionPilot MCP
+连接的本地 Agent 对话（包括 Codex/Claude Code 各自的进程），选择后消息只投递给该对话。
+Agent 通过 `get_shared_context` 读取消息，并用 `append_shared_context` 将计划、工具结果和结论
+回写到侧边栏。为识别对话，可在 MCP 进程环境中设置 `BASTION_PILOT_CONVERSATION_ID`（Codex
+也会尝试读取 `CODEX_THREAD_ID`）。
+
 自建/内网网关（vLLM、Ollama 的 OpenAI 适配、公司内部 LLM 网关）配置结构相同——只要你不愿
 意，终端输出可以完全不出内网。侧边栏历史可跨重启恢复：重新打开面板会自动载入最近一次对话。
+插件聊天记录保存在 `~/.bastion-pilot/chats/`，MCP Agent 与侧边栏共享同一套终端、审批和审计状态。
+插件不会扫描桌面应用的私有数据库；只有通过 MCP 连接并上报身份的本地 Agent 对话会出现在列表中。
+
+历史记录只作为背景，不代表当前服务器状态。查询当前目录、文件、服务等状态时，需要在本轮重新
+发现终端并执行相应命令；如果没有终端、执行失败或被拒绝，应明确提示无法确认，而不是复用旧结果。
 
 ## 配置
 
@@ -153,6 +177,7 @@ Provider：
 | `server.port`                | `8765`    | daemon 监听端口（始终只绑 `127.0.0.1`）              |
 | `security.token`             | 自动生成  | 插件与 MCP Server 的配对 token                       |
 | `approval.mode`              | `confirm` | `auto` / `confirm` / `readonly`                      |
+| `approval.requireUserApproval` | `true`  | 默认所有命令、按键和文件操作都必须由面板明确批准       |
 | `approval.confirmTimeoutMs`  | `120000`  | 审批超时即拒绝                                       |
 | `approval.readonlyAllowlist` | `[]`      | 正则列表；`readonly` 模式下命中的命令放行            |
 | `providers[]`                | `[]`      | 内置聊天用的 OpenAI 兼容 Provider                    |
@@ -162,8 +187,9 @@ Provider：
 | `output.maxInlineChars`      | `6000`    | 超过则截断 + 落盘                                    |
 | `transcripts.enabled`        | `true`    | 按会话记录终端转录到 `~/.bastion-pilot/transcripts/` |
 
-插件侧设置（选项页）：daemon URL、配对 token、已授权 origin 及每个 origin 的站点 profile
-（`generic-xterm` / `jumpserver`）。
+插件侧设置（选项页）：服务地址、配对令牌、AI 服务商、已授权站点及每个站点的
+站点 profile（`generic-xterm` / `jumpserver`）。AI Provider 配置由本地 daemon 通过鉴权连接
+保存，不会写入浏览器同步存储。终端命令在默认严格模式下每次都必须经过用户批准；只读的会话发现和输出读取不会改变服务器状态。
 
 ## 常见问题
 
@@ -181,7 +207,7 @@ Provider：
 ```bash
 pnpm install
 pnpm all        # build + typecheck + test + lint
-pnpm test       # protocol / bridge / extension 共 86 个测试
+pnpm test       # protocol / bridge / extension 共 123 个测试
 pnpm --filter @bastion-pilot/extension zip   # 插件发布 zip
 node scripts/gen-icons.mjs                   # 重新生成图标
 ```

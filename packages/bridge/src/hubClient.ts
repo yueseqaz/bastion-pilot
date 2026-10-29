@@ -17,6 +17,9 @@ export interface HubClientOptions {
   token: string;
   name: string;
   version: string;
+  agentId?: string;
+  conversationId?: string;
+  label?: string;
   /** Spawn the daemon if nothing is listening (used by `bastion-pilot mcp`). */
   spawnDaemon?: { command: string; args: string[]; env?: NodeJS.ProcessEnv };
 }
@@ -138,6 +141,9 @@ export class HubClient {
           role: 'brain',
           name: this.opts.name,
           version: this.opts.version,
+          ...(this.opts.agentId ? { agentId: this.opts.agentId } : {}),
+          ...(this.opts.conversationId ? { conversationId: this.opts.conversationId } : {}),
+          ...(this.opts.label ? { label: this.opts.label } : {}),
         });
       });
       ws.on('message', (raw) => {

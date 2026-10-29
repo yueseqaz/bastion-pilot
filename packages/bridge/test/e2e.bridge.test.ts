@@ -23,6 +23,7 @@ function makeHome(approvalMode: 'auto' | 'confirm' | 'readonly'): string {
   const cfg = defaultConfig();
   cfg.security.token = TOKEN;
   cfg.approval.mode = approvalMode;
+  cfg.approval.requireUserApproval = approvalMode === 'confirm';
   cfg.approval.confirmTimeoutMs = 5_000;
   cfg.output.maxInlineChars = 2_000;
   cfg.server.port = 0;
@@ -163,6 +164,20 @@ describe('daemon e2e', () => {
     expect(result.sessions[0]!.sessionId).toBe('sess_1');
   });
 
+  it('shares conversation context between MCP and the daemon', async () => {
+    const { home, brain } = await boot('auto');
+    const appended = (await brain.executeTool('mcp', 'append_shared_context', {
+      role: 'note',
+      content: 'MCP agent plan: inspect the current service status.',
+    })) as { entry: { source: string; content: string } };
+    expect(appended.entry.source).toBe('mcp');
+    const context = (await brain.executeTool('mcp', 'get_shared_context', { limit: 10 })) as {
+      entries: Array<{ content: string }>;
+    };
+    expect(context.entries.at(-1)?.content).toContain('current service status');
+    expect(fs.existsSync(path.join(home, 'shared-context.json'))).toBe(true);
+  });
+
   it('propagates tool errors from the browser', async () => {
     const { ext, brain } = await boot('auto');
     ext.onToolCall = (call) => ext.replyToolError(call.callId, 'terminal not ready');
@@ -177,6 +192,70 @@ describe('daemon e2e', () => {
     await expect(brain.executeTool('mcp', 'send_command', { sessionId: 's' })).rejects.toThrow(
       /invalid params/
     );
+  });
+
+  it('reads and updates provider settings over the authenticated options connection', async () => {
+    const { home, url } = await boot('auto');
+    const ws = new WebSocket(url);
+    const waitFor = (type: string) =>
+      new Promise<BpMessage>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`timeout waiting for ${type}`)), 4_000);
+        ws.on('message', (raw) => {
+          const msg = JSON.parse(String(raw)) as BpMessage;
+          if (msg.type === 'ping') ws.send(JSON.stringify(makeEnvelope('pong', {})));
+          if (msg.type === type) {
+            clearTimeout(timer);
+            resolve(msg);
+          }
+        });
+      });
+    await new Promise<void>((resolve, reject) => {
+      ws.once('error', reject);
+      ws.once('open', () => {
+        ws.send(
+          JSON.stringify(
+            makeEnvelope('hello', {
+              token: TOKEN,
+              role: 'brain',
+              name: 'options-page',
+              version: '0',
+            })
+          )
+        );
+        resolve();
+      });
+    });
+    await waitFor('welcome');
+    ws.send(JSON.stringify(makeEnvelope('provider_configs_get', {})));
+    const initial = await waitFor('provider_configs');
+    expect(initial.payload.providers).toEqual([]);
+
+    ws.send(
+      JSON.stringify(
+        makeEnvelope('provider_configs_update', {
+          providers: [
+            {
+              id: 'local',
+              label: 'Local model',
+              baseUrl: 'http://127.0.0.1:11434/v1',
+              apiKey: 'test-key',
+              model: 'qwen2.5',
+              stream: true,
+            },
+          ],
+          activeProviderId: 'local',
+        })
+      )
+    );
+    const saved = await waitFor('provider_configs_saved');
+    expect(saved.payload.providerCount).toBe(1);
+    const config = JSON.parse(fs.readFileSync(path.join(home, 'config.json'), 'utf8')) as {
+      providers: Array<{ id: string; apiKey: string }>;
+      activeProviderId: string;
+    };
+    expect(config.providers[0]).toMatchObject({ id: 'local', apiKey: 'test-key' });
+    expect(config.activeProviderId).toBe('local');
+    ws.close();
   });
 
   it('saves oversized output to a file and reports the path', async () => {

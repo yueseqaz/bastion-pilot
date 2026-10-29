@@ -137,7 +137,9 @@ Then, in your agent, ask something like: _"list the bastion sessions, and on web
 usage"_. The agent will call `list_sessions`, then `send_command df -h`, read the output, and
 answer — subject to your approval mode.
 
-**Built-in side-panel chat** (optional) — add an OpenAI-compatible provider to
+**Built-in side-panel chat** (optional) — open the extension's **Settings → AI providers**
+section, add an API Key service, enter only its endpoint URL and API key, then click **Fetch
+models** and choose a model. The same settings can also be edited directly in
 `~/.bastion-pilot/config.json`:
 
 ```json
@@ -154,6 +156,12 @@ answer — subject to your approval mode.
 }
 ```
 
+The side panel's **Mode** selector is mutually exclusive: **API Key** calls the configured provider
+directly, while **Local Agent** lists connected Claude Code / Codex MCP conversations so you can
+target one conversation. The selected agent reads the request with `get_shared_context` and reports
+back with `append_shared_context`; set `BASTION_PILOT_CONVERSATION_ID` (or `CODEX_THREAD_ID`) in
+the MCP process environment for a human-readable conversation identity.
+
 Self-hosted / intranet gateways (vLLM, Ollama's OpenAI adapter, corporate LLM gateways) work with
 the same shape — the terminal output never has to leave your network if you don't want it to.
 Side-panel history survives restarts: reopening the panel restores the latest conversation.
@@ -167,6 +175,7 @@ Side-panel history survives restarts: reopening the panel restores the latest co
 | `server.port`                | `8765`    | daemon listen port (always bound to `127.0.0.1`)                       |
 | `security.token`             | generated | pairing token for the extension & MCP server                           |
 | `approval.mode`              | `confirm` | `auto` / `confirm` / `readonly`                                        |
+| `approval.requireUserApproval` | `true` | every command, keystroke and file operation needs an explicit panel approval |
 | `approval.confirmTimeoutMs`  | `120000`  | unanswered approvals are denied after this                             |
 | `approval.readonlyAllowlist` | `[]`      | regex list; in `readonly` mode matching commands are allowed           |
 | `providers[]`                | `[]`      | OpenAI-compatible providers for the built-in chat                      |
@@ -176,8 +185,9 @@ Side-panel history survives restarts: reopening the panel restores the latest co
 | `output.maxInlineChars`      | `6000`    | larger outputs are truncated + saved to a file                         |
 | `transcripts.enabled`        | `true`    | per-session terminal transcripts under `~/.bastion-pilot/transcripts/` |
 
-Extension-side settings (options page): daemon URL, pairing token, granted origins and the site
-profile per origin (`generic-xterm` / `jumpserver`).
+Extension-side settings (options page): daemon URL, pairing token, AI providers, granted origins
+and the site profile per origin (`generic-xterm` / `jumpserver`). AI provider settings are written
+by the authenticated local daemon and are not stored in browser sync storage.
 
 ## Troubleshooting
 
@@ -195,7 +205,7 @@ profile per origin (`generic-xterm` / `jumpserver`).
 ```bash
 pnpm install
 pnpm all        # build + typecheck + test + lint
-pnpm test       # 86 tests across protocol / bridge / extension
+pnpm test       # 123 tests across protocol / bridge / extension
 pnpm --filter @bastion-pilot/extension zip   # release zip for the extension
 node scripts/gen-icons.mjs                   # regenerate icons
 ```

@@ -5,10 +5,12 @@ import path from 'node:path';
 import { makeEnvelope, type DaemonMessage } from '@bastion-pilot/protocol';
 import type { BastionPilotConfig, ProviderConfig } from './config.js';
 import { AgentLoop, DEFAULT_SYSTEM_PROMPT, type ChatMessage } from './agentLoop.js';
+import { SharedContext } from './sharedContext.js';
 
 interface ChatSession {
   id: string;
   providerId: string | null;
+  targetSessionId: string | null;
   messages: ChatMessage[];
   busy: boolean;
   seq: number;
@@ -20,6 +22,7 @@ export interface ChatManagerOptions {
   chatsDir: string;
   executeTool: (source: 'agent' | 'panel', tool: string, params: unknown) => Promise<unknown>;
   renderResult: (tool: string, data: unknown) => string;
+  sharedContext: SharedContext;
   emit: (msg: DaemonMessage) => void;
   log: { info(...a: unknown[]): void; warn(...a: unknown[]): void; error(...a: unknown[]): void };
 }
@@ -37,12 +40,13 @@ export class ChatManager {
     fs.mkdirSync(opts.chatsDir, { recursive: true });
   }
 
-  create(providerId?: string): ChatSession {
-    const resumed = this.tryResumeLatest(providerId);
+  create(providerId?: string, targetSessionId?: string, fresh = false): ChatSession {
+    const resumed = fresh ? null : this.tryResumeLatest(providerId, targetSessionId);
     if (resumed) return resumed;
     const session: ChatSession = {
       id: crypto.randomUUID(),
       providerId: providerId ?? null,
+      targetSessionId: targetSessionId ?? null,
       messages: [],
       busy: false,
       seq: 0,
@@ -57,7 +61,7 @@ export class ChatManager {
    * history across panel/daemon restarts. Returns null when nothing usable
    * is on disk or the caller explicitly asked for a fresh provider.
    */
-  private tryResumeLatest(providerId?: string): ChatSession | null {
+  private tryResumeLatest(providerId?: string, targetSessionId?: string): ChatSession | null {
     try {
       const files = fs
         .readdirSync(this.opts.chatsDir)
@@ -74,6 +78,7 @@ export class ChatManager {
       ) as {
         chatId?: string;
         providerId?: string | null;
+        targetSessionId?: string | null;
         messages?: ChatMessage[];
       };
       if (!parsed.chatId || !Array.isArray(parsed.messages)) return null;
@@ -82,6 +87,7 @@ export class ChatManager {
       const session: ChatSession = {
         id: parsed.chatId,
         providerId: providerId ?? parsed.providerId ?? null,
+        targetSessionId: targetSessionId ?? parsed.targetSessionId ?? null,
         messages,
         busy: false,
         seq: 0,
@@ -102,16 +108,14 @@ export class ChatManager {
     chatId: string;
     messages: Array<{ role: 'user' | 'assistant' | 'tool'; content: string }>;
   } {
-    return {
-      chatId: session.id,
-      messages: session.messages
-        .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'tool')
-        .map((m) => ({
-          role: m.role as 'user' | 'assistant' | 'tool',
-          content:
-            m.role === 'tool' && m.content.length > 300 ? m.content.slice(0, 300) + '…' : m.content,
-        })),
-    };
+    const messages = session.messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'tool')
+      .map((m) => ({
+        role: m.role as 'user' | 'assistant' | 'tool',
+        content:
+          m.role === 'tool' && m.content.length > 300 ? m.content.slice(0, 300) + '…' : m.content,
+      }));
+    return { chatId: session.id, messages };
   }
 
   get(chatId: string): ChatSession | undefined {
@@ -146,6 +150,7 @@ export class ChatManager {
     session.busy = true;
     session.abort = new AbortController();
     session.messages.push({ role: 'user', content: text });
+    this.opts.sharedContext.append({ source: 'panel', role: 'user', content: text, chatId });
     const emit = (msg: DaemonMessage) => this.opts.emit(msg);
 
     try {
@@ -155,12 +160,29 @@ export class ChatManager {
         maxIterations: this.opts.config.agent.maxIterations,
         maxRetries: this.opts.config.agent.maxRetries,
         contextToolChars: this.opts.config.agent.contextToolChars,
-        executeTool: this.opts.executeTool,
+        executeTool: (source, tool, params) =>
+          this.opts.executeTool(source, tool, this.bindTargetSession(session, tool, params)),
         renderResult: this.opts.renderResult,
         log: this.opts.log,
       });
+      const sharedText = this.opts.sharedContext.promptText();
+      const sharedMessage: ChatMessage | null = sharedText
+        ? {
+            role: 'system',
+            content:
+              'Shared conversation context from the local Agent and BastionPilot panel. Treat it as background only; verify live terminal state before claiming current facts:\n' +
+              sharedText,
+          }
+        : null;
+      const loopMessages = sharedMessage
+        ? [
+            ...session.messages.slice(0, -1),
+            sharedMessage,
+            session.messages[session.messages.length - 1]!,
+          ]
+        : session.messages;
       const result = await loop.run({
-        messages: session.messages,
+        messages: loopMessages,
         signal: session.abort.signal,
         hooks: {
           onDelta: (t) =>
@@ -169,13 +191,33 @@ export class ChatManager {
             ),
           onToolCall: (callId, tool, params) =>
             emit(makeEnvelope('chat_tool_call', { chatId, callId, tool, params }) as DaemonMessage),
-          onToolResult: (callId, _tool, ok, summary) =>
+          onToolResult: (callId, tool, ok, summary) => {
+            this.opts.sharedContext.append({
+              source: 'panel',
+              role: 'tool',
+              content: `${tool}: ${ok ? summary : `ERROR: ${summary}`}`,
+              chatId,
+            });
             emit(
               makeEnvelope('chat_tool_result', { chatId, callId, ok, summary }) as DaemonMessage
-            ),
+            );
+          },
         },
       });
-      session.messages = result.messages;
+      session.messages = sharedMessage
+        ? result.messages.filter((message) => message !== sharedMessage)
+        : result.messages;
+      const finalAssistant = [...session.messages]
+        .reverse()
+        .find((message) => message.role === 'assistant');
+      if (finalAssistant?.content) {
+        this.opts.sharedContext.append({
+          source: 'panel',
+          role: 'assistant',
+          content: finalAssistant.content,
+          chatId,
+        });
+      }
       emit(
         makeEnvelope('chat_done', {
           chatId,
@@ -201,13 +243,31 @@ export class ChatManager {
     return providers.find((p) => p.id === id) ?? providers[0]!;
   }
 
+  private bindTargetSession(
+    session: ChatSession,
+    tool: string,
+    rawParams: unknown
+  ): unknown {
+    if (!session.targetSessionId || tool === 'list_sessions') return rawParams;
+    if (!rawParams || typeof rawParams !== 'object' || Array.isArray(rawParams)) return rawParams;
+    // The panel's target is authoritative. The model may still call
+    // list_sessions for discovery, but every terminal operation stays on the
+    // user-selected session to prevent production/staging mix-ups.
+    return { ...(rawParams as Record<string, unknown>), sessionId: session.targetSessionId };
+  }
+
   private async persist(session: ChatSession): Promise<void> {
     try {
       const file = path.join(this.opts.chatsDir, `${session.id}.json`);
       await fsp.writeFile(
         file,
         JSON.stringify(
-          { chatId: session.id, providerId: session.providerId, messages: session.messages },
+          {
+            chatId: session.id,
+            providerId: session.providerId,
+            targetSessionId: session.targetSessionId,
+            messages: session.messages,
+          },
           null,
           2
         ),

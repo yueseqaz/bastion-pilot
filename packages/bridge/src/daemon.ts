@@ -9,10 +9,11 @@ import {
   makeEnvelope,
   parseClientMessage,
   toolSchema,
+  ProviderConfigSchema,
   type ClientMessage,
   type SessionInfo,
 } from '@bastion-pilot/protocol';
-import { configPaths, loadConfig, resolveHome } from './config.js';
+import { configPaths, loadConfig, resolveHome, saveConfig } from './config.js';
 import { AuditLogger } from './audit.js';
 import { OutputStore } from './outputStore.js';
 import { ApprovalEngine } from './approval.js';
@@ -22,12 +23,17 @@ import { FileTransfer, type CommandResultLike, type ReadResultLike } from './fil
 import { TranscriptRecorder } from './transcripts.js';
 import { VERSION } from './version.js';
 import { createLogger, type Logger } from './logger.js';
+import { SharedContext } from './sharedContext.js';
 
 interface Conn {
   id: string;
   role: 'extension' | 'brain';
   name: string;
   version: string;
+  agentId?: string;
+  conversationId?: string;
+  label?: string;
+  connectedAt: number;
   ws: WebSocket;
   lastPong: number;
   sessionIds: Set<string>;
@@ -58,6 +64,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   const home = opts.configHome ?? resolveHome();
   const { config } = loadConfig(home);
   const paths = configPaths(home);
+  const sharedContext = new SharedContext(paths.sharedContext, log);
   const port = opts.port ?? config.server.port;
   const audit = new AuditLogger(paths.auditDir);
   const outputs = new OutputStore(paths.outputsDir, config.output.maxInlineChars);
@@ -86,6 +93,37 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   };
 
   const extensionConns = () => [...state.conns.values()].filter((c) => c.role === 'extension');
+
+  const agentStatus = () => {
+    // The options page uses a short-lived brain-role connection only to read
+    // provider settings; it is not a local coding agent session.
+    const brains = [...state.conns.values()].filter(
+      (c) => c.role === 'brain' && c.name !== 'options-page' && c.name !== 'options-test'
+    );
+    const agents = brains.map((brain) => ({
+      agentId: brain.agentId ?? brain.id,
+      name: brain.name,
+      label: brain.label ?? brain.name,
+      ...(brain.conversationId ? { conversationId: brain.conversationId } : {}),
+      connectedAt: brain.connectedAt,
+      lastSeenAt: brain.lastPong,
+    }));
+    return {
+      connected: brains.length > 0,
+      brainsConnected: brains.length,
+      names: brains.map((brain) => brain.name),
+      agents,
+    };
+  };
+
+  const broadcastAgentStatus = () => {
+    const status = agentStatus();
+    for (const ext of extensionConns()) sendTo(ext, 'agent_status', status);
+  };
+
+  sharedContext.subscribe((event) => {
+    for (const ext of extensionConns()) sendTo(ext, 'shared_context_event', event);
+  });
 
   const approvalEngine = new ApprovalEngine(config.approval, async (req) => {
     const ext = state.extension;
@@ -154,6 +192,11 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     params: Record<string, unknown>,
     source: 'mcp' | 'agent' | 'panel'
   ): Promise<unknown> => {
+    // An empty registry is a valid result for list_sessions. Avoid waiting on
+    // the MV3 service worker when no terminal is hooked (it may be suspended).
+    if (tool === ToolName.ListSessions && state.sessions.size === 0) {
+      return { sessions: [] };
+    }
     const ext = pickExtension(sessionId);
     if (!ext) {
       throw new Error(
@@ -297,7 +340,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
   const executeTool = async (
     source: 'mcp' | 'agent' | 'panel',
     tool: string,
-    rawParams: unknown
+    rawParams: unknown,
+    context: { agentId?: string } = {}
   ): Promise<unknown> => {
     if (!TOOL_MAP.has(tool as ToolName)) throw new Error(`unknown tool: ${tool}`);
     const parsed = toolSchema(tool as ToolName).safeParse(rawParams ?? {});
@@ -309,6 +353,30 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       );
     }
     const params = parsed.data as Record<string, unknown>;
+    if (tool === ToolName.GetSharedContext) {
+      const requestedAgent =
+        typeof params.targetAgentId === 'string' ? params.targetAgentId : context.agentId;
+      return {
+        entries: requestedAgent
+          ? sharedContext.recentForAgent(requestedAgent, params.limit as number | undefined)
+          : sharedContext.recent(params.limit as number | undefined),
+      };
+    }
+    if (tool === ToolName.AppendSharedContext) {
+      const entry = sharedContext.append({
+        source: source === 'mcp' ? 'mcp' : 'agent',
+        role: params.role as 'user' | 'assistant' | 'tool' | 'note',
+        content: params.content as string,
+        targetAgentId:
+          typeof params.targetAgentId === 'string'
+            ? params.targetAgentId
+            : source === 'mcp'
+              ? context.agentId
+              : undefined,
+        requestId: typeof params.requestId === 'string' ? params.requestId : undefined,
+      });
+      return { entry };
+    }
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : undefined;
     const t0 = Date.now();
 
@@ -399,6 +467,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       ((result as Record<string, unknown>)?.text ?? (result as Record<string, unknown>)?.screen) as
         string | undefined
     );
+    if (source === 'mcp') {
+      sharedContext.append({
+        source: 'mcp',
+        role: 'tool',
+        content: `${tool}\n${renderToolResult(tool, result)}`,
+        targetAgentId: context.agentId,
+      });
+    }
     return result;
   };
 
@@ -407,6 +483,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     chatsDir: paths.chatsDir,
     executeTool: (source, tool, params) => executeTool(source, tool, params),
     renderResult: renderToolResult,
+    sharedContext,
     emit: (msg) => {
       const ext = state.extension;
       if (ext && ext.ws.readyState === WebSocket.OPEN) ext.ws.send(JSON.stringify(msg));
@@ -482,6 +559,10 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
           ws,
           lastPong: Date.now(),
           sessionIds: new Set(),
+          agentId: msg.payload.agentId,
+          conversationId: msg.payload.conversationId,
+          label: msg.payload.label,
+          connectedAt: Date.now(),
         };
         state.conns.set(conn.id, conn);
         if (conn.role === 'extension') state.extension = conn;
@@ -496,6 +577,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
           })),
           activeProviderId: config.activeProviderId,
         });
+        if (conn.role === 'extension') sendTo(conn, 'agent_status', agentStatus());
+        else broadcastAgentStatus();
         return;
       }
       handleClientMessage(conn, msg);
@@ -513,6 +596,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
         pending.reject(new Error('the browser disconnected while the tool was running'));
       }
       log.info(`${conn.role} disconnected: ${conn.name}`);
+      if (conn.role === 'brain') broadcastAgentStatus();
     });
     ws.on('error', () => {
       /* close event handles cleanup */
@@ -549,7 +633,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
         }
         const { callId } = msg.payload;
         try {
-          const data = await executeTool(msg.payload.source, msg.payload.tool, msg.payload.params);
+          const data = await executeTool(msg.payload.source, msg.payload.tool, msg.payload.params, {
+            agentId: conn.agentId,
+          });
           sendTo(conn, 'tool_result', { callId, ok: true, data });
         } catch (err) {
           sendTo(conn, 'tool_result', { callId, ok: false, error: (err as Error).message });
@@ -563,8 +649,98 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
         });
         break;
       }
+      case 'provider_configs_get': {
+        if (conn.role !== 'brain') {
+          sendTo(conn, 'error', { message: 'only brain clients may read provider settings' });
+          break;
+        }
+        sendTo(conn, 'provider_configs', {
+          providers: config.providers,
+          activeProviderId: config.activeProviderId,
+        });
+        break;
+      }
+      case 'provider_configs_update': {
+        if (conn.role !== 'brain') {
+          sendTo(conn, 'error', { message: 'only brain clients may update provider settings' });
+          break;
+        }
+        try {
+          const payload = msg.payload;
+          const providers = payload.providers.map((provider) =>
+            ProviderConfigSchema.parse(provider)
+          );
+          const ids = new Set<string>();
+          for (const provider of providers) {
+            if (ids.has(provider.id)) throw new Error(`duplicate provider id: ${provider.id}`);
+            ids.add(provider.id);
+          }
+          if (payload.activeProviderId !== null && !ids.has(payload.activeProviderId)) {
+            throw new Error('activeProviderId must match one of the configured providers');
+          }
+          config.providers = providers;
+          config.activeProviderId = payload.activeProviderId;
+          saveConfig(config, home);
+          sendTo(conn, 'provider_configs_saved', {
+            activeProviderId: config.activeProviderId,
+            providerCount: config.providers.length,
+          });
+          // Keep the side panel's provider labels in sync for connected clients.
+          for (const panel of [...state.conns.values()].filter((c) => c.role === 'extension')) {
+            sendTo(panel, 'providers_list', {
+              providers: chats.providers(),
+              activeProviderId: config.activeProviderId,
+            });
+          }
+        } catch (err) {
+          sendTo(conn, 'error', {
+            message: `could not save provider settings: ${(err as Error).message}`,
+          });
+        }
+        break;
+      }
+      case 'provider_models_get': {
+        if (conn.role !== 'brain') {
+          sendTo(conn, 'error', { message: 'only brain clients may request provider models' });
+          break;
+        }
+        try {
+          const baseUrl = msg.payload.baseUrl.replace(/\/+$/, '');
+          const response = await fetch(`${baseUrl}/models`, {
+            headers: {
+              authorization: `Bearer ${msg.payload.apiKey}`,
+              accept: 'application/json',
+            },
+            signal: AbortSignal.timeout(10_000),
+          });
+          if (!response.ok) {
+            throw new Error(`provider returned HTTP ${response.status}`);
+          }
+          const body = (await response.json()) as {
+            data?: Array<{ id?: unknown } | string>;
+            models?: Array<{ id?: unknown } | string>;
+          };
+          const entries = Array.isArray(body.data) ? body.data : body.models;
+          const models = Array.isArray(entries)
+            ? entries
+                .map((entry) => (typeof entry === 'string' ? entry : entry?.id))
+                .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+                .map((id) => id.trim())
+            : [];
+          const uniqueModels = [...new Set(models)].sort((a, b) => a.localeCompare(b));
+          if (uniqueModels.length === 0) throw new Error('provider returned no models');
+          sendTo(conn, 'provider_models', { models: uniqueModels });
+        } catch (err) {
+          sendTo(conn, 'error', { message: `could not fetch provider models: ${(err as Error).message}` });
+        }
+        break;
+      }
       case 'chat_new': {
-        const session = chats.create(msg.payload.providerId);
+        const session = chats.create(
+          msg.payload.providerId,
+          msg.payload.sessionId,
+          msg.payload.fresh === true
+        );
         sendTo(conn, 'chat_created', { chatId: session.id });
         const replay = chats.replayPayload(session);
         if (replay.messages.length > 0) sendTo(conn, 'chat_replay', replay);
@@ -578,6 +754,29 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       }
       case 'chat_abort': {
         chats.abort(msg.payload.chatId);
+        break;
+      }
+      case 'shared_context_append': {
+        if (conn.role !== 'extension') {
+          sendTo(conn, 'error', { message: 'only the browser panel may append panel messages' });
+          break;
+        }
+        sharedContext.append({
+          source: 'panel',
+          role: msg.payload.role,
+          content: msg.payload.content,
+          chatId: msg.payload.chatId,
+          targetAgentId: msg.payload.targetAgentId,
+          requestId: msg.payload.requestId,
+        });
+        break;
+      }
+      case 'shared_context_get': {
+        sendTo(conn, 'shared_context_replay', {
+          entries: msg.payload.targetAgentId
+            ? sharedContext.recentForAgent(msg.payload.targetAgentId, msg.payload.limit)
+            : sharedContext.recent(msg.payload.limit),
+        });
         break;
       }
       case 'approval_response': {

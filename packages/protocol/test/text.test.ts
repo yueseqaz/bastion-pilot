@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TerminalTextRenderer, TextRingBuffer } from '../src/text.js';
+import { cleanCommandOutput, TerminalTextRenderer, TextRingBuffer } from '../src/text.js';
 
 function renderAll(chunks: string[]): { completed: string; pending: string } {
   const r = new TerminalTextRenderer();
@@ -135,5 +135,13 @@ describe('TextRingBuffer', () => {
     const buf = new TextRingBuffer(4);
     buf.writeLines(['toolongline\n']);
     expect(buf.readFromCursor(0, 100).text).toBe('toolongline\n');
+  });
+});
+
+describe('cleanCommandOutput', () => {
+  it('removes shell echoes and completion sentinels without touching output', () => {
+    expect(cleanCommandOutput('ops@host:~$ pwd\n/tmp/app\n__BP_ab12_0__\n', 'pwd')).toBe(
+      '/tmp/app'
+    );
   });
 });

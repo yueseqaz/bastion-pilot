@@ -5,6 +5,7 @@ import {
   newSentinelNonce,
   sentinelCommandFor,
   wrapCommandWithSentinel,
+  cleanCommandOutput,
   type SessionInfo,
 } from '@bastion-pilot/protocol';
 import { createFramer, type Framer } from './framer.js';
@@ -24,9 +25,9 @@ export interface ExecuteOptions {
 
 export interface SessionOptions {
   /**
-   * Bracketed-paste mode for command typing: null (default) probes the shell
-   * once on the first sentinel-attached command; true/false force it. Plain
-   * typing is always used for interactive keystrokes.
+   * Bracketed-paste mode for command typing. The production default is false
+   * so opening a terminal never emits an unapproved probe command; null keeps
+   * the legacy probe available for explicit compatibility/testing.
    */
   bracketedPaste?: boolean | null;
 }
@@ -83,7 +84,7 @@ export class TerminalSession {
   ) {
     this.sessionId = `sess_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
     this.framer = createFramer(profile.framer);
-    this.bracketedPaste = opts.bracketedPaste ?? null;
+    this.bracketedPaste = opts.bracketedPaste === undefined ? false : opts.bracketedPaste;
     this.info = {
       sessionId: this.sessionId,
       title,
@@ -151,7 +152,7 @@ export class TerminalSession {
   } {
     const result = this.ring.readFromCursor(cursor, maxChars);
     const pending = this.renderer.pending();
-    return { ...result, text: result.text + pending };
+    return { ...result, text: stripSentinelNoise(result.text + pending) };
   }
 
   /** Snapshot of the visible screen (fallback when no xterm instance is reachable). */
@@ -203,18 +204,22 @@ export class TerminalSession {
     const waitMs = opts.waitMs ?? 10_000;
     const quietMs = opts.quietMs ?? 800;
     const attachSentinel = opts.attachSentinel !== false;
-    const cursorBefore = this.ring.endCursor;
+    const initialCursor = this.ring.endCursor;
 
     if (!attachSentinel) {
       const sentAt = Date.now();
       this.typeText(`${command}\r`);
       const status = await this.waitQuietOrTimeout(sentAt, waitMs, quietMs);
-      return this.buildResult(cursorBefore, status, null);
+      return this.buildResult(initialCursor, status, null, command);
     }
 
     if (this.bracketedPaste === null) {
       this.bracketedPaste = await this.probeBracketedPaste(Math.max(800, Math.min(waitMs, 3_000)));
     }
+
+    // Do not include the one-time bracketed-paste probe in the user's command
+    // result; it is an internal capability check, not terminal output.
+    const cursorBefore = this.ring.endCursor;
 
     const nonce = newSentinelNonce();
     const { waiter, done } = this.addWaiter(nonce);
@@ -237,9 +242,9 @@ export class TerminalSession {
     this.removeWaiter(waiter);
     if (raced === 'completed') {
       const exitCode = extractExitCode(this.scanText(), nonce);
-      return this.buildResult(cursorBefore, 'completed', exitCode);
+      return this.buildResult(cursorBefore, 'completed', exitCode, command);
     }
-    return this.buildResult(cursorBefore, raced, null);
+    return this.buildResult(cursorBefore, raced, null, command);
   }
 
   /**
@@ -328,14 +333,15 @@ export class TerminalSession {
   private buildResult(
     cursorBefore: number,
     status: CommandResult['status'],
-    exitCode: number | null
+    exitCode: number | null,
+    command?: string
   ): CommandResult {
     const result = this.readText(cursorBefore, 200_000);
     return {
       status,
       exitCode,
       cursor: result.nextCursor,
-      text: result.text,
+      text: cleanCommandOutput(result.text, command),
       hasMore: result.hasMore,
     };
   }
@@ -343,4 +349,12 @@ export class TerminalSession {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Hide the internal completion marker from tool results while retaining it in the raw buffer. */
+function stripSentinelNoise(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !line.includes('__BP_') || !/(?:\$\?__|_[0-9]+__)/.test(line))
+    .join('\n');
 }

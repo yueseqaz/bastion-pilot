@@ -67,12 +67,9 @@ interface BpWindow {
       };
     }
   }
-  Object.assign(PatchedWebSocket, {
-    CONNECTING: 0,
-    OPEN: 1,
-    CLOSING: 2,
-    CLOSED: 3,
-  });
+  // NativeWebSocket exposes these constants as inherited static properties.
+  // Do not assign them here: Chromium marks the WebSocket constants read-only,
+  // and assigning them throws before the interceptor can install the hook.
   try {
     w.WebSocket = PatchedWebSocket;
   } catch {

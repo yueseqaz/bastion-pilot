@@ -8,6 +8,7 @@ import {
   ToolName,
   UploadFileResult,
   WaitOutputResult,
+  cleanCommandOutput,
 } from '@bastion-pilot/protocol';
 
 /**
@@ -44,20 +45,17 @@ export function renderToolResult(tool: string, data: unknown): string {
             : r.status === 'quiet'
               ? 'no new output for a while — the command may still be running'
               : 'wait window elapsed while output kept flowing';
-        return (
-          `status: ${status}\n` +
-          '--- output ---\n' +
-          (r.text.trim().length > 0 ? r.text : '(no output)') +
-          `\n--- end --- (cursor ${r.cursor}${r.hasMore ? ', more output available via read_output' : ''})`
-        );
+        const output = cleanCommandOutput(r.text).trim();
+        return `status: ${status}\n${output || '(no output)'}${
+          r.hasMore ? `\nmore output available (cursor ${r.cursor})` : ''
+        }`;
       }
       case ToolName.ReadOutput: {
         const r = ReadOutputResult.parse(data);
-        return (
-          '--- output ---\n' +
-          (r.text.trim().length > 0 ? r.text : '(no new output)') +
-          `\n--- end --- (nextCursor ${r.nextCursor}${r.hasMore ? ', more available' : ''}${r.dropped ? ', WARNING: older output was dropped from the retention buffer' : ''})`
-        );
+        const output = cleanCommandOutput(r.text).trim();
+        return `${output || '(no new output)'}${
+          r.hasMore ? `\nmore output available (cursor ${r.nextCursor})` : ''
+        }${r.dropped ? '\nwarning: older output was dropped; rerun the command' : ''}`;
       }
       case ToolName.WaitOutput: {
         const r = WaitOutputResult.parse(data);
@@ -67,11 +65,10 @@ export function renderToolResult(tool: string, data: unknown): string {
             : r.status === 'timeout'
               ? 'still producing output when the wait elapsed'
               : 'new output arrived';
-        return (
-          `${status}\n--- output ---\n` +
-          (r.text.trim().length > 0 ? r.text : '(no new output)') +
-          `\n--- end --- (nextCursor ${r.nextCursor}${r.hasMore ? ', more available' : ''})`
-        );
+        const output = cleanCommandOutput(r.text).trim();
+        return `${status}\n${output || '(no new output)'}${
+          r.hasMore ? `\nmore output available (cursor ${r.nextCursor})` : ''
+        }`;
       }
       case ToolName.SendKey: {
         const r = SendKeyResult.parse(data);
@@ -93,6 +90,32 @@ export function renderToolResult(tool: string, data: unknown): string {
         const r = DownloadFileResult.parse(data);
         return `downloaded ${r.bytes} bytes to ${r.localPath} (mode 600).`;
       }
+      case ToolName.GetSharedContext: {
+        const entries =
+          (
+            data as {
+              entries?: Array<{
+                source: string;
+                role: string;
+                ts: string;
+                content: string;
+                requestId?: string;
+              }>;
+            }
+          ).entries ?? [];
+        return entries.length === 0
+          ? 'No shared conversation context yet.'
+          : entries
+              .map(
+                (entry) =>
+                  `[${entry.source}/${entry.role} ${entry.ts}${
+                    entry.requestId ? ` requestId=${entry.requestId}` : ''
+                  }]\n${entry.content}`
+              )
+              .join('\n\n');
+      }
+      case ToolName.AppendSharedContext:
+        return 'Shared context appended for the BastionPilot panel.';
       default:
         return JSON.stringify(data, null, 2);
     }

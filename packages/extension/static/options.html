@@ -1,58 +1,92 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>BastionPilot — Settings</title>
+    <title>BastionPilot — 设置</title>
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
     <main class="wrap">
-      <h1>BastionPilot <span class="ver"></span></h1>
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">本地安全控制台</p>
+          <h1>BastionPilot <span class="ver"></span></h1>
+        </div>
+        <span class="head-mark">BP</span>
+      </header>
 
       <section>
-        <h2>1. Local daemon</h2>
+        <h2><span>01</span> 本地服务</h2>
         <p class="hint">
-          Run <code>bastion-pilot daemon</code> on your machine, then paste the pairing token
-          printed by <code>bastion-pilot init</code>.
+          在本机运行 <code>bastion-pilot daemon</code>，再粘贴 <code>bastion-pilot init</code> 输出的配对令牌。
         </p>
         <label>
-          Daemon URL
+          服务地址
           <input id="daemon-url" type="text" placeholder="ws://127.0.0.1:8765" />
         </label>
         <label>
-          Pairing token
-          <input id="token" type="password" placeholder="paste the token from bastion-pilot init" />
+          配对令牌
+          <input id="token" type="password" placeholder="粘贴 bastion-pilot init 输出的令牌" />
         </label>
         <div class="row">
-          <button id="save-btn" class="primary">Save</button>
-          <button id="test-btn">Test connection</button>
+          <button id="save-btn" class="primary">保存连接</button>
+          <button id="test-btn">测试连接</button>
           <span id="test-result" class="result"></span>
         </div>
       </section>
 
       <section>
-        <h2>2. Bastion sites</h2>
+        <h2><span>02</span> 堡垒机站点</h2>
         <p class="hint">
-          Grant BastionPilot access to the origins that host your bastion web terminal. The
-          extension only runs on the sites you add here.
+          授予 BastionPilot 访问堡垒机终端站点的权限。插件只会在你添加的站点上运行。
         </p>
         <div class="row">
           <input id="site-input" type="text" placeholder="https://bastion.example.com" />
-          <button id="add-site-btn" class="primary">Grant access</button>
+          <button id="add-site-btn" class="primary">授予访问权限</button>
         </div>
         <ul id="site-list"></ul>
         <p class="hint" id="permission-hint"></p>
       </section>
 
       <section>
-        <h2>3. Approvals &amp; audit</h2>
+        <h2><span>03</span> AI 服务商</h2>
         <p class="hint">
-          The approval mode (auto / confirm / readonly), the audit log and AI providers are
-          configured on the daemon side in <code>~/.bastion-pilot/config.json</code>. The default
-          mode <strong>confirm</strong> shows every mutating command here or as a notification
-          before it runs.
+          为侧边栏对话配置一个或多个 OpenAI 兼容接口。每个服务商只需要填写接口 URL 和 API Key，点击“获取模型”选择模型。配置由本地服务保存到
+          <code>~/.bastion-pilot/config.json</code>，不会通过浏览器同步。
         </p>
+        <p class="hint">侧边栏顶部可在 <strong>API Key</strong> 与 <strong>本地 Agent</strong> 之间二选一；选择本地 Agent 时不会调用这里的 API Key。</p>
+        <div id="provider-list" class="provider-list"></div>
+        <div class="row provider-actions">
+          <button id="add-provider-btn">添加服务商</button>
+          <button id="add-kimi-btn">添加 API Key 服务</button>
+          <label class="active-provider-label">
+            当前服务商
+            <select id="active-provider"></select>
+          </label>
+          <button id="save-providers-btn" class="primary">保存 AI 配置</button>
+          <span id="provider-result" class="result"></span>
+        </div>
+      </section>
+
+      <section>
+        <h2><span>04</span> 审批与审计</h2>
+        <p class="hint">
+          审批与审计由本地服务统一控制。默认严格模式会在每条终端命令、按键和文件操作前
+          显示审批卡片；未批准或超时都会拒绝执行。高级用户可在
+          <code>~/.bastion-pilot/config.json</code> 中显式关闭 <code>approval.requireUserApproval</code>。
+        </p>
+      </section>
+
+      <section class="agent-card">
+        <h2><span>05</span> 本地 Agent 与会话</h2>
+        <p class="hint">Claude Code、Codex 等本地 Agent 可以通过 MCP 使用同一个终端、审批和审计链路，并通过共享上下文工具与侧边栏继续同一项工作。</p>
+        <div class="agent-steps">
+          <code>bastion-pilot mcp</code>
+          <span>→</span>
+          <span>在 Agent 的 MCP 配置中指向上面的命令</span>
+        </div>
+        <p class="hint">插件聊天记录保存在 <code>~/.bastion-pilot/chats/</code>，共享上下文保存在 <code>~/.bastion-pilot/shared-context.json</code>。本地 Agent 通过 MCP 连接后会出现在侧边栏，可选择具体 Codex/Claude Code 对话；Agent 用 <code>get_shared_context</code> 读取、用 <code>append_shared_context</code> 写回。</p>
       </section>
     </main>
 

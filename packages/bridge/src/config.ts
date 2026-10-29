@@ -27,8 +27,10 @@ export interface ProviderConfig {
 
 export interface ApprovalConfig {
   mode: ApprovalMode;
+  /** Require a visible user approval for every terminal-affecting tool. */
+  requireUserApproval?: boolean;
   confirmTimeoutMs?: number;
-  /** Regex sources; in readonly mode a mutating command is allowed when any matches. */
+  /** Legacy regex sources; only used when strict approval is explicitly disabled. */
   readonlyAllowlist?: string[];
 }
 
@@ -65,6 +67,7 @@ const configSchema = z.object({
   approval: z
     .object({
       mode: z.enum(['auto', 'confirm', 'readonly']).optional(),
+      requireUserApproval: z.boolean().optional(),
       confirmTimeoutMs: z.number().int().positive().optional(),
       readonlyAllowlist: z.array(z.string()).optional(),
     })
@@ -89,6 +92,7 @@ export function defaultConfig(): BastionPilotConfig {
     security: { token: crypto.randomBytes(24).toString('hex') },
     approval: {
       mode: 'confirm',
+      requireUserApproval: true,
       confirmTimeoutMs: 120_000,
       readonlyAllowlist: [],
     },
@@ -104,10 +108,20 @@ function mergeConfig(
   base: BastionPilotConfig,
   user: z.infer<typeof configSchema>
 ): BastionPilotConfig {
+  // Keep old explicit `auto`/`readonly` configs working during migration.
+  // Fresh installs use the strict default; users must explicitly opt out by
+  // setting requireUserApproval to false in their config.
+  const approval = {
+    ...base.approval,
+    ...user.approval,
+    ...(user.approval?.requireUserApproval === undefined && user.approval?.mode
+      ? { requireUserApproval: user.approval.mode === 'confirm' }
+      : {}),
+  };
   return {
     server: { ...base.server, ...user.server },
     security: { ...base.security, ...user.security },
-    approval: { ...base.approval, ...user.approval },
+    approval,
     providers: user.providers ?? base.providers,
     activeProviderId:
       user.activeProviderId !== undefined ? user.activeProviderId : base.activeProviderId,
@@ -125,6 +139,7 @@ export function configPaths(home: string) {
     outputsDir: path.join(home, 'outputs'),
     chatsDir: path.join(home, 'chats'),
     transcriptsDir: path.join(home, 'transcripts'),
+    sharedContext: path.join(home, 'shared-context.json'),
     downloadsDir: path.join(home, 'downloads'),
   };
 }

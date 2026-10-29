@@ -55,8 +55,8 @@ describe('TerminalSession', () => {
     expect(result.status).toBe('completed');
     expect(result.exitCode).toBe(0);
     expect(result.text).toContain('file1.txt');
-    // The echoed `echo` line (with literal $?) must not have been matched early.
-    expect(result.text).toContain('$?__');
+    // Internal sentinel lines are used for completion but are not user output.
+    expect(result.text).not.toContain('__BP_');
   });
 
   it('reports non-zero exit codes', async () => {

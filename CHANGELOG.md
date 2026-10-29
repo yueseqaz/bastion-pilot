@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Extension settings now manage OpenAI-compatible providers (URL, API key, model, streaming,
+  temperature and token limit) through the authenticated local daemon.
+- Add an API-key provider flow with URL/model discovery and a side-panel picker for connected local-agent conversations.
+- MCP connections advertise an agent/conversation identity, allowing panel messages to be routed to
+  one Codex or Claude Code process instead of broadcasting to every local agent.
+- Provider settings are validated, persisted to `~/.bastion-pilot/config.json`, and covered by an
+  end-to-end daemon test.
+
+### Fixed
+
+- Treat prior messages and tool output as historical context, not current server evidence. Common
+  live-state requests must rediscover sessions and execute a command in the current turn; reject
+  unverified replies when a provider ignores the required tool call.
+- Remove empty assistant placeholders on stop/completion, ignore late output while stopping, and
+  wait for cancellation acknowledgement before starting the next queued turn.
+- Forward restored chat history to the panel and display non-streaming provider replies.
+- Add a persistent shared context bridge (`get_shared_context` / `append_shared_context`) so MCP
+  clients and the side panel can exchange plans and findings while keeping live terminal state
+  verification separate.
+- Strip shell echoes, sentinel markers and terminal-only noise from command results, and reject
+  multiline/Markdown-wrapped command payloads before execution.
+
 ## [0.2.2] - 2026-10-29
 
 ### Fixed

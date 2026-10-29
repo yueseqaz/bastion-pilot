@@ -10,6 +10,8 @@ export const ToolName = {
   GetScreen: 'get_screen',
   UploadFile: 'upload_file',
   DownloadFile: 'download_file',
+  GetSharedContext: 'get_shared_context',
+  AppendSharedContext: 'append_shared_context',
 } as const;
 export type ToolName = (typeof ToolName)[keyof typeof ToolName];
 
@@ -29,6 +31,13 @@ export const SendCommandParams = z.object({
   command: z
     .string()
     .min(1)
+    .max(20_000)
+    .refine((value) => !/[\r\n]/.test(value), {
+      message: 'command must be one line; chain steps with && or ;',
+    })
+    .refine((value) => !/```/.test(value), {
+      message: 'command must not contain Markdown code fences',
+    })
     .describe(
       'A single shell command to type and execute. One logical command per call — ' +
         'chain steps with `&&` or `;` instead of pasting many lines. No trailing newline. ' +
@@ -158,6 +167,27 @@ export const DownloadFileParams = z.object({
       'Where to store the downloaded file on your machine. Defaults to ' +
         '~/.bastion-pilot/downloads/<basename>.'
     ),
+});
+
+export const GetSharedContextParams = z.object({
+  limit: z.number().int().min(1).max(100).optional().describe('Maximum shared entries to return.'),
+  targetAgentId: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('Only return messages addressed to this local-agent conversation.'),
+});
+
+export const AppendSharedContextParams = z.object({
+  role: z.enum(['user', 'assistant', 'tool', 'note']),
+  content: z.string().min(1).max(20_000),
+  targetAgentId: z.string().min(1).optional(),
+  /** Correlate an assistant response with a panel request. */
+  requestId: z
+    .string()
+    .min(1)
+    .optional()
+    .describe('Echo the requestId from the panel message when replying to that request.'),
 });
 
 /* ------------------------------------------------------------------ */
@@ -322,6 +352,23 @@ export const TOOLS: ToolDescriptor[] = [
       '~64 MB; for bigger files use streaming commands (tar/gzip + split) instead.' +
       AUDIT_WARNING,
     shape: DownloadFileParams.shape,
+  },
+  {
+    name: ToolName.GetSharedContext,
+    title: 'Read shared BastionPilot conversation context',
+    description:
+      'Read recent conversation notes shared between the BastionPilot side panel and local MCP agents. ' +
+      'Use this at the start of a related task so the panel and local agent can continue the same work. ' +
+      'This is context only; terminal state must still be checked with list_sessions and a live command.',
+    shape: GetSharedContextParams.shape,
+  },
+  {
+    name: ToolName.AppendSharedContext,
+    title: 'Share a message with BastionPilot',
+    description:
+      'Append a concise user/assistant/tool note to the shared BastionPilot conversation so the side panel can see it. ' +
+      'Use for the task plan, findings and final summary, not secrets or unverified current server state.',
+    shape: AppendSharedContextParams.shape,
   },
 ];
 

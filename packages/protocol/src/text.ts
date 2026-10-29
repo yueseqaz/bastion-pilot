@@ -263,3 +263,29 @@ export class TextRingBuffer {
     return this.lines.slice(Math.max(0, this.lines.length - n));
   }
 }
+
+/** Remove terminal-only bookkeeping from user-facing command output. The PTY
+ * often echoes the command and the completion marker; neither is useful to a
+ * person or an agent. ANSI/control bytes have already been handled by the
+ * renderer, but this helper is also safe for older extension payloads. */
+export function cleanCommandOutput(text: string, command?: string): string {
+  const expected = command?.trim();
+  const lines = text
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter((line) => !line.includes('__BP_'))
+    .filter((line) => {
+      if (!expected || !line.trim()) return true;
+      const value = line.trim();
+      if (value === expected) return false;
+      // Common prompts: "user@host:~$ <command>" / "> <command>".
+      return !new RegExp(`(?:^|[#$%>]\\s+)${escapeRegExp(expected)}\\s*$`).test(value);
+    });
+  while (lines.length && lines[0]!.trim() === '') lines.shift();
+  while (lines.length && lines.at(-1)!.trim() === '') lines.pop();
+  return lines.join('\n');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
