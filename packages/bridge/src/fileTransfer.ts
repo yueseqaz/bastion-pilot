@@ -140,6 +140,11 @@ export class FileTransfer {
    */
   async download(remotePath: string): Promise<Buffer> {
     const sizeResult = await this.exec(buildSizeCommand(remotePath), { waitMs: 30_000 });
+    if (sizeResult.status !== 'completed') {
+      throw new Error(
+        `terminal is busy or unreachable (size probe ${sizeResult.status}); download aborted`
+      );
+    }
     const size = extractSize(sizeResult.text);
     if (size === null) {
       throw new Error(
@@ -188,13 +193,25 @@ export class FileTransfer {
 
     if (!overwrite) {
       const exists = await this.exec(buildExistsCommand(remotePath), { waitMs: 30_000 });
-      if (exists.status === 'completed' && exists.exitCode === 0) {
+      if (exists.status !== 'completed') {
+        // A busy terminal would also swallow this probe — never continue on
+        // an unverifiable state.
+        throw new Error(
+          `terminal is busy or unreachable (exists probe ${exists.status}); upload aborted`
+        );
+      }
+      if (exists.exitCode === 0) {
         throw new Error(`${remotePath} already exists on the remote (use overwrite=true)`);
       }
     }
 
     const nonce = newTransferNonce();
-    await this.exec(buildUploadInit(nonce), { waitMs: 30_000 });
+    const init = await this.exec(buildUploadInit(nonce), { waitMs: 30_000 });
+    if (init.status !== 'completed' || init.exitCode !== 0) {
+      throw new Error(
+        `terminal is busy or the temp file could not be cleared (status ${init.status}, exit ${init.exitCode}); upload aborted`
+      );
+    }
 
     const chunks = encodeToBase64Chunks(data);
     for (let i = 0; i < chunks.length; i += LINES_PER_BATCH) {
@@ -202,6 +219,11 @@ export class FileTransfer {
       const append = await this.exec(buildUploadAppend(nonce, batch), { waitMs: 120_000 });
       if (append.status === 'timeout') {
         throw new Error('remote terminal stopped accepting input during upload; aborted');
+      }
+      if (append.status === 'completed' && append.exitCode !== 0) {
+        throw new Error(
+          `remote append failed (exit ${append.exitCode}); upload aborted, temp file ${uploadTempPath(nonce)} may remain`
+        );
       }
     }
 

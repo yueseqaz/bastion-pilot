@@ -236,4 +236,66 @@ describe('FileTransfer executor', () => {
       /stopped accepting input/
     );
   });
+
+  it('aborts the upload when the terminal is busy (unverifiable exists probe)', async () => {
+    const ft = new FileTransfer(
+      async () => ({ status: 'quiet', exitCode: null, cursor: 1, text: '', hasMore: false }),
+      async () => {
+        throw new Error('unreachable');
+      }
+    );
+    await expect(ft.upload(Buffer.from('x'), '/etc/hosts', false)).rejects.toThrow(
+      /terminal is busy/
+    );
+  });
+
+  it('aborts when the init command cannot be confirmed', async () => {
+    let calls = 0;
+    const ft = new FileTransfer(
+      async () => {
+        calls++;
+        // overwrite=true skips the exists probe; init fails to confirm.
+        return {
+          status: calls === 1 ? 'quiet' : 'completed',
+          exitCode: 0,
+          cursor: 1,
+          text: '',
+          hasMore: false,
+        };
+      },
+      async () => {
+        throw new Error('unreachable');
+      }
+    );
+    await expect(ft.upload(Buffer.from('x'), '/out', true)).rejects.toThrow(
+      /temp file could not be cleared/
+    );
+  });
+
+  it('aborts when a remote append fails with a non-zero exit', async () => {
+    const ft = new FileTransfer(
+      async (command) => {
+        if (command.includes('<<')) {
+          return { status: 'completed', exitCode: 1, cursor: 1, text: '', hasMore: false };
+        }
+        return { status: 'completed', exitCode: 0, cursor: 1, text: '', hasMore: false };
+      },
+      async () => {
+        throw new Error('unreachable');
+      }
+    );
+    await expect(ft.upload(Buffer.alloc(50_000, 1), '/out', true)).rejects.toThrow(
+      /remote append failed/
+    );
+  });
+
+  it('aborts the download when the size probe cannot complete', async () => {
+    const ft = new FileTransfer(
+      async () => ({ status: 'quiet', exitCode: null, cursor: 1, text: '', hasMore: false }),
+      async () => {
+        throw new Error('unreachable');
+      }
+    );
+    await expect(ft.download('/f')).rejects.toThrow(/terminal is busy/);
+  });
 });

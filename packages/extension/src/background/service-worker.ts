@@ -1,6 +1,7 @@
 import {
   makeEnvelope,
   parseDaemonMessage,
+  ToolName,
   type DaemonMessage,
   type SessionInfo,
 } from '@bastion-pilot/protocol';
@@ -292,6 +293,12 @@ async function onDaemonMessage(msg: DaemonMessage) {
 }
 
 async function routeToolCall(callId: string, tool: string, params: Record<string, unknown>) {
+  // Session discovery is global: the registry holds every hooked tab/frame,
+  // while each content controller only knows about its own frame.
+  if (tool === ToolName.ListSessions) {
+    daemon.send('tool_result', { callId, ok: true, data: { sessions: registry.list() } });
+    return;
+  }
   const target = registry.byId(typeof params.sessionId === 'string' ? params.sessionId : undefined);
   if (!target || !target.port) {
     daemon.send('tool_result', {

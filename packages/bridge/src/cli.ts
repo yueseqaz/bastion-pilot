@@ -177,7 +177,7 @@ async function runDoctor(config: BastionPilotConfig, configPath: string): Promis
       ok: health.extensionConnected === true,
       detail:
         health.extensionConnected === true
-          ? `connected (${health.sessions} session(s) hooked)`
+          ? `connected (${health.sessionCount} session(s) hooked)`
           : 'not connected — open the browser side panel and check the daemon URL/token',
     });
   } else if (!serving) {

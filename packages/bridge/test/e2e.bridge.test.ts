@@ -277,4 +277,15 @@ describe('daemon e2e', () => {
     expect(error).toMatch(/invalid token/);
     bad.close();
   });
+
+  it('does not leak session details through the unauthenticated /health endpoint', async () => {
+    const { daemon, ext } = await boot('auto');
+    ext.sendSessions([session]);
+    await new Promise((r) => setTimeout(r, 50));
+    const res = await fetch(`http://127.0.0.1:${daemon.port}/health`);
+    const text = await res.text();
+    expect(text).not.toContain('bastion.example.com');
+    expect(text).not.toContain('"url"');
+    expect(JSON.parse(text).sessionCount).toBe(1);
+  });
 });

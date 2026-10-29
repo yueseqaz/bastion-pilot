@@ -224,7 +224,7 @@ with your company's policies** — including whether terminal output may be sent
 - [x] iframe-based terminals (one session per terminal frame)
 - [x] More site profiles — Teleport, Qizhi, Aliyun Bastionhost (experimental, field-test welcome)
 - [x] Session transcripts replay for post-incident review (`bastion-pilot transcripts`)
-- [x] npm publish-ready bridge package (`cd packages/bridge && npm publish`)
+- [x] npm publish-ready bridge package (`pnpm --filter bastion-pilot publish`)
 - [ ] Published npm package + `npx bastion-pilot mcp` (needs the maintainer's npm account)
 - [ ] Vision fallback for non-xterm terminals (Guacamole-style canvas streaming)
 - [ ] Multiple terminals inside a single browser frame

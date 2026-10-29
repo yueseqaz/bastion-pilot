@@ -210,7 +210,7 @@ profiles            适配更多堡垒机产品的说明
 - [x] iframe 型终端（每个终端 iframe 一个会话）
 - [x] 更多站点 profile —— Teleport、齐治、阿里云堡垒机（实验性，欢迎实测反馈）
 - [x] 会话转录回放（`bastion-pilot transcripts`）
-- [x] bridge 包已就绪可发布 npm（`cd packages/bridge && npm publish`）
+- [x] bridge 包已就绪可发布 npm（`pnpm --filter bastion-pilot publish`）
 - [ ] 正式发布 npm + `npx bastion-pilot mcp`（需要维护者的 npm 账号）
 - [ ] 非 xterm 终端的视觉兜底（Guacamole 类 canvas 流）
 - [ ] 单个浏览器 frame 内的多终端

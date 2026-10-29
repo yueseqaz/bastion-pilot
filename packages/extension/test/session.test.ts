@@ -12,14 +12,15 @@ interface Harness {
   feed(text: string): void;
 }
 
-function makeSession(): Harness {
+function makeSession(bracketedPaste: boolean | null = false): Harness {
   const writes: string[] = [];
   const session = new TerminalSession(
     'ws_1',
     GENERIC_XTERM_PROFILE,
     (data) => writes.push(decoder.decode(data as ArrayBuffer)),
     'https://bastion.example.com/koko/',
-    'web-01'
+    'web-01',
+    { bracketedPaste }
   );
   return {
     session,
@@ -153,6 +154,66 @@ describe('TerminalSession', () => {
     expect(result.status).toBe('completed');
     expect(result.text).toContain('100%');
     expect(result.text).not.toContain('10%');
+  });
+
+  it('probes once and then types commands inside bracketed-paste markers', async () => {
+    const h = makeSession(null); // null = probe on first sentinel command
+    const promise = h.session.executeCommand('ls -la', { waitMs: 4_000 });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Probe input: wrapped `true` + its sentinel line.
+    expect(h.writes[0]).toBe(
+      '\x1b[200~true\x1b[201~\necho __BP_????????_$?__\n'.replace(
+        '????????',
+        extractNonce(h.writes[0] ?? '')
+      )
+    );
+    const probeNonce = extractNonce(h.writes[0] ?? '');
+    h.feed(`true\r\necho __BP_${probeNonce}_$?__\r\n__BP_${probeNonce}_0__\r\n`);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // The command itself is now wrapped; sentinel rides in the same write.
+    const cmdWrite = h.writes.find((w) => w.includes('ls -la'));
+    expect(cmdWrite).toBe(
+      `\x1b[200~ls -la\x1b[201~\necho __BP_${extractNonce(cmdWrite ?? '')}_$?__\n`
+    );
+
+    const cmdNonce = extractNonce(cmdWrite ?? '');
+    h.feed(`ls -la\r\n__BP_${cmdNonce}_0__\r\n`);
+    const result = await promise;
+    expect(result.status).toBe('completed');
+    expect(result.exitCode).toBe(0);
+  });
+
+  it('falls back to plain typing when the probe shows no bracketed-paste support', async () => {
+    const h = makeSession(null);
+    const promise = h.session.executeCommand('ls', { waitMs: 4_000 });
+    await new Promise((r) => setTimeout(r, 20));
+    const probeNonce = extractNonce(h.writes[0] ?? '');
+    // Unsupported shell: markers become part of the command line → exit 127.
+    h.feed(`\x1b[200~true\x1b[201~: command not found\r\n__BP_${probeNonce}_127__\r\n`);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const cmdWrite = h.writes.find((w) => w.includes('ls\n') || w.includes('ls\r'));
+    expect(cmdWrite).toBe(`ls\necho __BP_${extractNonce(cmdWrite ?? '')}_$?__\n`);
+    const cmdNonce = extractNonce(cmdWrite ?? '');
+    h.feed(`__BP_${cmdNonce}_0__\r\n`);
+    const result = await promise;
+    expect(result.status).toBe('completed');
+  });
+
+  it('does not wrap interactive typing in paste markers', async () => {
+    const h = makeSession(null);
+    const promise = h.session.executeCommand('y', {
+      waitMs: 2_000,
+      quietMs: 150,
+      attachSentinel: false,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    // No probe happened: the very first write is the raw keystroke.
+    expect(h.writes[0]).toBe('y\r');
+    h.feed('done\r\n');
+    await promise;
   });
 });
 

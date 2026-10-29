@@ -4,6 +4,35 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-10-29
+
+### Fixed
+
+- `list_sessions` now reports every hooked terminal: the service worker answers from its global
+  session registry instead of relaying to a single content controller (multi-tab / multi-iframe
+  discovery was broken).
+- Binary WebSocket streams are only accepted as terminals when they look like PTY output
+  (printable-text ratio heuristic); analytics/protobuf sockets no longer get hooked.
+- File transfers abort instead of corrupting data when the terminal is busy: the exists probe,
+  temp-file init and every upload batch now verify completion and exit codes.
+- In-flight tool calls fail immediately when the browser disconnects, instead of hanging until
+  the timeout (pending calls are now keyed by connection).
+- `/health` no longer exposes session URLs (bastion tokens can leak via query strings); it
+  reports a `sessionCount` instead.
+- `wait_output` without an explicit cursor waits from the current end of output rather than
+  replaying the whole scrollback.
+- `upload_file`/`download_file` results render as human-readable text.
+
+### Added
+
+- Bracketed-paste command typing with a one-shot per-session probe: supported shells (bash/zsh
+  with readline) receive commands wrapped in paste markers, so tabs and multi-line payloads can
+  no longer be mangled by readline; unsupported shells automatically fall back to plain typing.
+
+### Changed
+
+- npm distribution instructions use `pnpm publish` (the manifest carries a pnpm workspace range).
+
 ## [0.2.0] - 2026-10-29
 
 ### Added

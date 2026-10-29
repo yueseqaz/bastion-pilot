@@ -1,10 +1,12 @@
 import {
+  DownloadFileResult,
   GetScreenResult,
   ListSessionsResult,
   ReadOutputResult,
   SendCommandResult,
   SendKeyResult,
   ToolName,
+  UploadFileResult,
   WaitOutputResult,
 } from '@bastion-pilot/protocol';
 
@@ -82,6 +84,14 @@ export function renderToolResult(tool: string, data: unknown): string {
           (r.screen.trim().length > 0 ? r.screen : '(empty screen)') +
           (r.truncated ? '\n--- truncated to the requested number of lines ---' : '\n--- end ---')
         );
+      }
+      case ToolName.UploadFile: {
+        const r = UploadFileResult.parse(data);
+        return `uploaded ${r.bytes} bytes to ${r.remotePath}.`;
+      }
+      case ToolName.DownloadFile: {
+        const r = DownloadFileResult.parse(data);
+        return `downloaded ${r.bytes} bytes to ${r.localPath} (mode 600).`;
       }
       default:
         return JSON.stringify(data, null, 2);

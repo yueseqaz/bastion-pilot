@@ -1,5 +1,6 @@
 import { ToolName, type SessionInfo } from '@bastion-pilot/protocol';
 import { normalizeOrigin, profileById, type SiteProfile } from '../profiles.js';
+import { isPtyLikeBytes } from './pty.js';
 import { TerminalSession } from './session.js';
 
 /**
@@ -146,6 +147,9 @@ class TabController {
       if (!this.isLikelyTerminalText(observation, msg.data)) return;
     } else {
       observation.binarySeen = true;
+      // Analytics/protobuf sockets also ship binary frames — only accept a
+      // binary stream that actually looks like terminal output.
+      if (!isPtyLikeBytes(msg.data as ArrayBuffer)) return;
     }
     observation.decided = true;
     this.createSession(msg.socketId, observation, msg.data ?? '');
@@ -323,7 +327,8 @@ class TabController {
           return;
         }
         case ToolName.WaitOutput: {
-          const cursor = typeof params.cursor === 'number' ? params.cursor : session.info ? 0 : 0;
+          // Default cursor = "everything from now on", not the whole scrollback.
+          const cursor = typeof params.cursor === 'number' ? params.cursor : session.endCursor;
           const timeoutMs = typeof params.timeoutMs === 'number' ? params.timeoutMs : 20_000;
           const quietMs = typeof params.quietMs === 'number' ? params.quietMs : 1_000;
           const result = await session.waitOutput(cursor, timeoutMs, quietMs);

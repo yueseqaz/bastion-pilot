@@ -69,7 +69,12 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
     sessions: new Map<string, SessionInfo>(),
     toolPending: new Map<
       string,
-      { resolve: (data: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }
+      {
+        resolve: (data: unknown) => void;
+        reject: (e: Error) => void;
+        timer: NodeJS.Timeout;
+        connId: string;
+      }
     >(),
     approvals: new Map<string, { resolve: (ok: boolean) => void; timer: NodeJS.Timeout }>(),
   };
@@ -164,7 +169,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
         state.toolPending.delete(callId);
         reject(new Error(`tool ${tool} timed out in the browser after ${timeoutMs}ms`));
       }, timeoutMs);
-      state.toolPending.set(callId, { resolve, reject, timer });
+      state.toolPending.set(callId, { resolve, reject, timer, connId: ext.id });
       sendTo(ext, 'tool_call', { callId, source, tool, params });
     });
   };
@@ -419,7 +424,9 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
         port: actualPort,
         extensionConnected: extensionConns().length > 0,
         brainsConnected: [...state.conns.values()].filter((c) => c.role === 'brain').length,
-        sessions: [...state.sessions.values()],
+        // Only a count: session URLs may carry bastion tokens in query
+        // strings and /health is readable by any local process.
+        sessionCount: state.sessions.size,
         approvalMode: config.approval.mode,
         activeProviderId: config.activeProviderId,
         providers: config.providers.map((p) => ({
@@ -497,6 +504,14 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       if (!conn) return;
       state.conns.delete(conn.id);
       if (state.extension === conn) state.extension = null;
+      // Fail any in-flight tool calls that were routed to this connection
+      // instead of leaving them hanging until the timeout.
+      for (const [callId, pending] of [...state.toolPending]) {
+        if (pending.connId !== conn.id) continue;
+        state.toolPending.delete(callId);
+        clearTimeout(pending.timer);
+        pending.reject(new Error('the browser disconnected while the tool was running'));
+      }
       log.info(`${conn.role} disconnected: ${conn.name}`);
     });
     ws.on('error', () => {

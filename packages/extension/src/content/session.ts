@@ -3,6 +3,7 @@ import {
   TerminalTextRenderer,
   extractExitCode,
   newSentinelNonce,
+  sentinelCommandFor,
   wrapCommandWithSentinel,
   type SessionInfo,
 } from '@bastion-pilot/protocol';
@@ -12,11 +13,22 @@ import type { SiteProfile } from '../profiles.js';
 
 const SCAN_TAIL_CHARS = 8192;
 const TICK_MS = 50;
+const BRACKETED_PASTE_START = '\x1b[200~';
+const BRACKETED_PASTE_END = '\x1b[201~';
 
 export interface ExecuteOptions {
   waitMs?: number;
   quietMs?: number;
   attachSentinel?: boolean;
+}
+
+export interface SessionOptions {
+  /**
+   * Bracketed-paste mode for command typing: null (default) probes the shell
+   * once on the first sentinel-attached command; true/false force it. Plain
+   * typing is always used for interactive keystrokes.
+   */
+  bracketedPaste?: boolean | null;
 }
 
 export interface CommandResult {
@@ -59,16 +71,19 @@ export class TerminalSession {
   private readonly waiters: SentinelWaiter[] = [];
   private scanTail = '';
   private lastDataAt = 0;
+  private bracketedPaste: boolean | null;
 
   constructor(
     readonly socketId: string,
     readonly profile: SiteProfile,
     private readonly write: (data: string | ArrayBuffer) => void,
     public readonly url: string,
-    public readonly title: string
+    public readonly title: string,
+    opts: SessionOptions = {}
   ) {
     this.sessionId = `sess_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
     this.framer = createFramer(profile.framer);
+    this.bracketedPaste = opts.bracketedPaste ?? null;
     this.info = {
       sessionId: this.sessionId,
       title,
@@ -78,6 +93,11 @@ export class TerminalSession {
       createdAt: this.createdAt,
       lastActivityAt: this.createdAt,
     };
+  }
+
+  /** Absolute offset just past the newest committed output. */
+  get endCursor(): number {
+    return this.ring.endCursor;
   }
 
   /** Feed a downstream frame (already teed from the page WebSocket). */
@@ -174,6 +194,10 @@ export class TerminalSession {
    * - sentinel attached: resolve when `echo __BP_..._$?__` prints (exit code
    *   included), when output goes quiet, or when the wait elapses;
    * - no sentinel (interactive dialogs): resolve on quiet or timeout only.
+   *
+   * The first sentinel-attached command probes the shell for bracketed-paste
+   * support; when supported, commands are typed inside paste markers so tabs
+   * and multi-line payloads cannot be mangled by readline.
    */
   async executeCommand(command: string, opts: ExecuteOptions = {}): Promise<CommandResult> {
     const waitMs = opts.waitMs ?? 10_000;
@@ -188,20 +212,22 @@ export class TerminalSession {
       return this.buildResult(cursorBefore, status, null);
     }
 
+    if (this.bracketedPaste === null) {
+      this.bracketedPaste = await this.probeBracketedPaste(Math.max(800, Math.min(waitMs, 3_000)));
+    }
+
     const nonce = newSentinelNonce();
-    const waiter: SentinelWaiter = {
-      nonce,
-      regex: new RegExp(`__BP_${nonce}_(\\d+)__`),
-      done: false,
-      resolve: () => {},
-    };
-    const done = new Promise<void>((resolve) => {
-      waiter.resolve = resolve;
-    });
-    this.waiters.push(waiter);
+    const { waiter, done } = this.addWaiter(nonce);
 
     const sentAt = Date.now();
-    this.typeText(wrapCommandWithSentinel(command, nonce));
+    if (this.bracketedPaste) {
+      const cmd = command.replace(/\n+$/, '');
+      this.typeText(
+        `${BRACKETED_PASTE_START}${cmd}${BRACKETED_PASTE_END}\n${sentinelCommandFor(nonce)}\n`
+      );
+    } else {
+      this.typeText(wrapCommandWithSentinel(command, nonce));
+    }
 
     const raced = await Promise.race([
       done.then(() => 'completed' as const),
@@ -214,6 +240,41 @@ export class TerminalSession {
       return this.buildResult(cursorBefore, 'completed', exitCode);
     }
     return this.buildResult(cursorBefore, raced, null);
+  }
+
+  /**
+   * Probe readline for bracketed-paste support: type `true` wrapped in paste
+   * markers followed by a sentinel. Supported shells consume the markers and
+   * exit 0; unsupported ones execute the markers as part of the command line
+   * (non-zero exit). The result is cached for the session lifetime.
+   */
+  private async probeBracketedPaste(waitMs: number): Promise<boolean> {
+    const nonce = newSentinelNonce();
+    const { waiter, done } = this.addWaiter(nonce);
+    const sentAt = Date.now();
+    this.typeText(
+      `${BRACKETED_PASTE_START}true${BRACKETED_PASTE_END}\n${sentinelCommandFor(nonce)}\n`
+    );
+    const raced = await Promise.race([
+      done.then(() => 'completed' as const),
+      this.waitQuietOrTimeout(sentAt, waitMs, 500),
+    ]);
+    this.removeWaiter(waiter);
+    return raced === 'completed' && extractExitCode(this.scanText(), nonce) === 0;
+  }
+
+  private addWaiter(nonce: string): { waiter: SentinelWaiter; done: Promise<void> } {
+    const waiter: SentinelWaiter = {
+      nonce,
+      regex: new RegExp(`__BP_${nonce}_(\\d+)__`),
+      done: false,
+      resolve: () => {},
+    };
+    const done = new Promise<void>((resolve) => {
+      waiter.resolve = resolve;
+    });
+    this.waiters.push(waiter);
+    return { waiter, done };
   }
 
   /**
