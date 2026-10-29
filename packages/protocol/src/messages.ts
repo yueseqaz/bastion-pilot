@@ -202,6 +202,21 @@ export const DaemonMessage = z.discriminatedUnion('type', [
     v: z.literal(1),
     id: z.string(),
     ts: z.number(),
+    type: z.literal('chat_replay'),
+    payload: z.object({
+      chatId: z.string(),
+      messages: z.array(
+        z.object({
+          role: z.enum(['user', 'assistant', 'tool']),
+          content: z.string(),
+        })
+      ),
+    }),
+  }),
+  z.object({
+    v: z.literal(1),
+    id: z.string(),
+    ts: z.number(),
     type: z.literal('chat_delta'),
     payload: z.object({ chatId: z.string(), seq: z.number(), text: z.string() }),
   }),

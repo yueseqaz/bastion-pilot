@@ -193,6 +193,15 @@ body {
   border: 1px solid rgba(248, 113, 113, 0.4);
 }
 
+.msg.replay {
+  align-self: stretch;
+  color: var(--muted);
+  background: transparent;
+  border: 1px dashed var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
+
 .tool-card {
   align-self: stretch;
   border: 1px solid var(--border);

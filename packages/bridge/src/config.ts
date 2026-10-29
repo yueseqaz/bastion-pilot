@@ -38,7 +38,12 @@ export interface BastionPilotConfig {
   approval: ApprovalConfig;
   providers: ProviderConfig[];
   activeProviderId: string | null;
-  agent: { maxIterations: number; systemPrompt?: string };
+  agent: {
+    maxIterations: number;
+    systemPrompt?: string;
+    maxRetries: number;
+    contextToolChars: number;
+  };
   output: { maxInlineChars: number };
   transcripts: { enabled: boolean };
 }
@@ -70,6 +75,8 @@ const configSchema = z.object({
     .object({
       maxIterations: z.number().int().min(1).max(100).optional(),
       systemPrompt: z.string().optional(),
+      maxRetries: z.number().int().min(0).max(10).optional(),
+      contextToolChars: z.number().int().min(0).optional(),
     })
     .optional(),
   output: z.object({ maxInlineChars: z.number().int().min(500) }).optional(),
@@ -87,7 +94,7 @@ export function defaultConfig(): BastionPilotConfig {
     },
     providers: [],
     activeProviderId: null,
-    agent: { maxIterations: 30 },
+    agent: { maxIterations: 30, maxRetries: 2, contextToolChars: 2_000 },
     output: { maxInlineChars: 6000 },
     transcripts: { enabled: true },
   };

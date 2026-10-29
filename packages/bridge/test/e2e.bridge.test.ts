@@ -288,4 +288,74 @@ describe('daemon e2e', () => {
     expect(text).not.toContain('"url"');
     expect(JSON.parse(text).sessionCount).toBe(1);
   });
+
+  it('reconnects after a daemon restart and keeps serving tool calls', async () => {
+    const home = makeHome('auto');
+    const port = 30_000 + Math.floor(Math.random() * 20_000);
+    const daemon = await startDaemon({ configHome: home, port });
+    const url = `ws://127.0.0.1:${port}`;
+    const ext = new FakeExtension(url);
+    await ext.welcome;
+    const brain = new HubClient(
+      { url, token: TOKEN, name: 'reconnect-brain', version: '0' },
+      logger()
+    );
+    await brain.connect();
+
+    // Restart the daemon on the same port; the brain must recover on its own.
+    await daemon.close();
+    await new Promise((r) => setTimeout(r, 300));
+    const daemon2 = await startDaemon({ configHome: home, port });
+    cleanups.push(async () => {
+      brain.close();
+      ext.close();
+      await daemon2.close();
+    });
+    const ext2 = new FakeExtension(url);
+    await ext2.welcome;
+    ext2.sendSessions([session]);
+    ext2.onToolCall = (call) => ext2.replyTool(call.callId, { sessions: [session] });
+
+    const deadline = Date.now() + 20_000;
+    let served = false;
+    while (Date.now() < deadline && !served) {
+      try {
+        await brain.executeTool('mcp', 'list_sessions', {});
+        served = true;
+      } catch {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+    expect(served).toBe(true);
+  }, 30_000);
+
+  it('replays the latest persisted chat when the panel asks for a new chat', async () => {
+    const { home, ext } = await boot('auto');
+    const chatsDir = path.join(home, 'chats');
+    fs.mkdirSync(chatsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(chatsDir, 'prev-chat.json'),
+      JSON.stringify({
+        chatId: 'prev-chat',
+        providerId: null,
+        messages: [
+          { role: 'user', content: 'check the disk' },
+          { role: 'assistant', content: 'df -h says 80% used.' },
+          { role: 'tool', content: 'x'.repeat(1000) },
+        ],
+      })
+    );
+
+    ext.send('chat_new', {});
+    const created = await ext.wait('chat_created');
+    expect(created.payload.chatId).toBe('prev-chat');
+    const replay = await ext.wait('chat_replay');
+    expect(replay.payload.chatId).toBe('prev-chat');
+    const messages = replay.payload.messages as Array<{ role: string; content: string }>;
+    const roles = messages.map((m) => m.role);
+    expect(roles).toEqual(['user', 'assistant', 'tool']);
+    const toolMsg = messages[2]!;
+    expect(String(toolMsg.content).length).toBeLessThan(400);
+    expect(String(toolMsg.content)).toContain('…');
+  });
 });

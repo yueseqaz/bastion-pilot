@@ -62,6 +62,7 @@ export class HubClient {
   private seq = 0;
   private stopped = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private reconnectAttempts = 0;
   private connectWaiters: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
 
   sessions: SessionInfo[] = [];
@@ -193,13 +194,25 @@ export class HubClient {
       p.reject(new Error('daemon connection lost'));
       this.pending.delete(callId);
     }
-    if (!this.stopped) {
-      this.reconnectTimer = setTimeout(() => {
-        this.dialWithRetry(8, 1000).catch((err) => {
-          this.log.error('reconnect failed permanently:', (err as Error).message);
-        });
-      }, 1000);
-    }
+    if (!this.stopped) this.scheduleReconnect();
+  }
+
+  /**
+   * Keep retrying forever with capped exponential backoff (1s → 30s): the MCP
+   * process must survive daemon restarts instead of dying after a few tries.
+   */
+  private scheduleReconnect() {
+    if (this.stopped || this.reconnectTimer) return;
+    const delay = Math.min(30_000, 1_000 * 2 ** this.reconnectAttempts++);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.dial()
+        .then(() => {
+          this.reconnectAttempts = 0;
+          this.log.info('reconnected to daemon');
+        })
+        .catch(() => this.scheduleReconnect());
+    }, delay);
   }
 
   private sendEnvelope(type: string, payload: unknown) {

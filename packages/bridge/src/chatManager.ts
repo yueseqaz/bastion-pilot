@@ -38,6 +38,8 @@ export class ChatManager {
   }
 
   create(providerId?: string): ChatSession {
+    const resumed = this.tryResumeLatest(providerId);
+    if (resumed) return resumed;
     const session: ChatSession = {
       id: crypto.randomUUID(),
       providerId: providerId ?? null,
@@ -48,6 +50,68 @@ export class ChatManager {
     };
     this.chats.set(session.id, session);
     return session;
+  }
+
+  /**
+   * Restore the most recently persisted chat so the side panel keeps its
+   * history across panel/daemon restarts. Returns null when nothing usable
+   * is on disk or the caller explicitly asked for a fresh provider.
+   */
+  private tryResumeLatest(providerId?: string): ChatSession | null {
+    try {
+      const files = fs
+        .readdirSync(this.opts.chatsDir)
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => ({
+          f,
+          mtime: fs.statSync(path.join(this.opts.chatsDir, f)).mtimeMs,
+        }))
+        .sort((a, b) => b.mtime - a.mtime);
+      const newest = files[0];
+      if (!newest) return null;
+      const parsed = JSON.parse(
+        fs.readFileSync(path.join(this.opts.chatsDir, newest.f), 'utf8')
+      ) as {
+        chatId?: string;
+        providerId?: string | null;
+        messages?: ChatMessage[];
+      };
+      if (!parsed.chatId || !Array.isArray(parsed.messages)) return null;
+      const messages = parsed.messages.filter((m) => m && m.role && typeof m.content === 'string');
+      if (messages.length === 0) return null;
+      const session: ChatSession = {
+        id: parsed.chatId,
+        providerId: providerId ?? parsed.providerId ?? null,
+        messages,
+        busy: false,
+        seq: 0,
+        abort: null,
+      };
+      this.chats.set(session.id, session);
+      return session;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Compact view of a restored chat for the panel: user/assistant text in
+   * full, tool results truncated (the transcript files keep everything).
+   */
+  replayPayload(session: ChatSession): {
+    chatId: string;
+    messages: Array<{ role: 'user' | 'assistant' | 'tool'; content: string }>;
+  } {
+    return {
+      chatId: session.id,
+      messages: session.messages
+        .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'tool')
+        .map((m) => ({
+          role: m.role as 'user' | 'assistant' | 'tool',
+          content:
+            m.role === 'tool' && m.content.length > 300 ? m.content.slice(0, 300) + '…' : m.content,
+        })),
+    };
   }
 
   get(chatId: string): ChatSession | undefined {
@@ -89,6 +153,8 @@ export class ChatManager {
         provider,
         systemPrompt: this.opts.config.agent.systemPrompt || DEFAULT_SYSTEM_PROMPT,
         maxIterations: this.opts.config.agent.maxIterations,
+        maxRetries: this.opts.config.agent.maxRetries,
+        contextToolChars: this.opts.config.agent.contextToolChars,
         executeTool: this.opts.executeTool,
         renderResult: this.opts.renderResult,
         log: this.opts.log,

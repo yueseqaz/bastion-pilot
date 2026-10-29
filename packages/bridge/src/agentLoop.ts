@@ -47,10 +47,30 @@ export interface AgentLoopOptions {
   tools?: ToolDescriptor[];
   systemPrompt?: string;
   maxIterations?: number;
+  /** Retries for transient provider failures (429 / 5xx / network). Default 2. */
+  maxRetries?: number;
+  /**
+   * Truncate tool results older than the last 6 in the request context to
+   * this many characters (0 disables trimming). Default 2000. Session
+   * transcripts keep the full text either way.
+   */
+  contextToolChars?: number;
   executeTool: (source: 'agent' | 'panel', tool: string, params: unknown) => Promise<unknown>;
   renderResult: (tool: string, data: unknown) => string;
   log: { info(...a: unknown[]): void; warn(...a: unknown[]): void; error(...a: unknown[]): void };
 }
+
+/** HTTP failure from the provider, carrying the status for retry decisions. */
+export class ProviderHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+const CONTEXT_KEEP_RECENT_TOOLS = 6;
 
 /** Built-in brain: an OpenAI-compatible tool-calling loop with SSE streaming. */
 export class AgentLoop {
@@ -129,7 +149,67 @@ export class AgentLoop {
     }
   }
 
+  /**
+   * Provider call with retries. Transient failures (429 / 5xx / network) are
+   * retried with exponential backoff — but only while nothing has been
+   * streamed to the user yet, so a mid-stream failure never duplicates output.
+   */
   private async chat(
+    messages: ChatMessage[],
+    signal: AbortSignal,
+    hooks: LoopHooks
+  ): Promise<{ content: string | null; toolCalls: AccumulatedToolCall[] }> {
+    const maxRetries = this.opts.maxRetries ?? 2;
+    let emitted = false;
+    const guardedHooks: LoopHooks = {
+      ...hooks,
+      onDelta: (text) => {
+        emitted = true;
+        hooks.onDelta(text);
+      },
+    };
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.chatOnce(messages, signal, guardedHooks);
+      } catch (err) {
+        if (signal.aborted || emitted || attempt >= maxRetries || !this.isRetryable(err)) {
+          throw err;
+        }
+        const delay = Math.min(8_000, 500 * 2 ** attempt) + Math.floor(Math.random() * 250);
+        this.opts.log.warn(
+          `provider call failed (${(err as Error).message.slice(0, 120)}); retrying in ${delay}ms ` +
+            `(attempt ${attempt + 1}/${maxRetries})`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  private isRetryable(err: unknown): boolean {
+    if (err instanceof ProviderHttpError) return err.status === 429 || err.status >= 500;
+    return err instanceof TypeError; // fetch() network failure
+  }
+
+  /** Cap older tool results so long sessions do not blow up the context. */
+  private trimForContext(messages: ChatMessage[]): ChatMessage[] {
+    const maxChars = this.opts.contextToolChars ?? 2_000;
+    if (maxChars <= 0) return messages;
+    const toolIndices = messages.map((m, i) => (m.role === 'tool' ? i : -1)).filter((i) => i >= 0);
+    const stale = new Set(
+      toolIndices.slice(0, Math.max(0, toolIndices.length - CONTEXT_KEEP_RECENT_TOOLS))
+    );
+    return messages.map((m, i) => {
+      if (!stale.has(i) || m.content.length <= maxChars) return m;
+      return {
+        ...m,
+        content:
+          m.content.slice(0, maxChars) +
+          `\n[...truncated for context (${m.content.length} chars total) — re-run the command or read_output if you need the rest...]`,
+      };
+    });
+  }
+
+  private async chatOnce(
     messages: ChatMessage[],
     signal: AbortSignal,
     hooks: LoopHooks
@@ -137,9 +217,10 @@ export class AgentLoop {
     const { provider } = this.opts;
     const base = provider.baseUrl.replace(/\/+$/, '');
     const stream = provider.stream !== false;
+    const systemPrompt = this.opts.systemPrompt ?? DEFAULT_SYSTEM_PROMPT;
     const body: Record<string, unknown> = {
       model: provider.model,
-      messages,
+      messages: [{ role: 'system', content: systemPrompt }, ...this.trimForContext(messages)],
       tools: this.toolsParam,
       stream,
     };
@@ -157,7 +238,7 @@ export class AgentLoop {
     });
     if (!res.ok) {
       const detail = (await res.text().catch(() => '')).slice(0, 500);
-      throw new Error(`provider returned HTTP ${res.status}: ${detail}`);
+      throw new ProviderHttpError(res.status, `provider returned HTTP ${res.status}: ${detail}`);
     }
 
     if (!stream || !res.body) {

@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-10-29
+
+### Fixed
+
+- The built-in side-panel chat never sent its system prompt to the provider — the safety-first
+  operator rules were defined but silently dropped from every request.
+
+### Added
+
+- Provider retry with exponential backoff for transient failures (429 / 5xx / network errors),
+  bounded by `agent.maxRetries` (default 2) and skipped once anything has been streamed, so a
+  mid-stream failure never duplicates output.
+- Request-context trimming: tool results older than the last 6 are truncated to
+  `agent.contextToolChars` (default 2000) so long sessions do not blow up the context window;
+  session transcripts keep the full text.
+- Side-panel chat history now survives restarts: the daemon resumes the latest persisted chat
+  and replays it to the panel (`chat_replay`).
+- The MCP server process (HubClient) reconnects to the daemon indefinitely with capped
+  exponential backoff instead of giving up after eight attempts.
+- Side panel shows a diagnostic hint when the daemon is connected but no terminal is hooked
+  ("reload the terminal tab after granting site access").
+
 ## [0.2.1] - 2026-10-29
 
 ### Fixed

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BastionPilot",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Let AI agents operate bastion-host web terminals — bridge Claude Code, Codex or your own AI provider to the terminal in your browser.",
   "minimum_chrome_version": "116",
   "icons": {

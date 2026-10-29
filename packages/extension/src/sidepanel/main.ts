@@ -81,6 +81,13 @@ function addErrorMessage(text: string) {
   scrollBottom();
 }
 
+function addReplayLine(text: string) {
+  const div = document.createElement('div');
+  div.className = 'msg replay';
+  div.textContent = text;
+  transcript.appendChild(div);
+}
+
 function paramsSummary(params: Record<string, unknown>): string {
   const json = JSON.stringify(params, null, 1);
   return json.length > 240 ? json.slice(0, 240) + '…' : json;
@@ -172,6 +179,13 @@ function renderState(state: StateMessage) {
   }
   renderApprovals(state.approvals);
   if (state.connected) removeEmptyHint();
+  const hookHint = document.getElementById('hook-hint');
+  if (hookHint) {
+    hookHint.classList.toggle(
+      'hidden',
+      !(state.connected && state.sessions.length === 0 && !chatId)
+    );
+  }
 }
 
 function handleChatEvent(message: ChatEventMessage['message']) {
@@ -184,6 +198,26 @@ function handleChatEvent(message: ChatEventMessage['message']) {
         pendingText = null;
       }
       break;
+    case 'chat_replay': {
+      // Restored history from a previous session — render compactly.
+      const messages = (payload.messages ?? []) as Array<{ role: string; content: string }>;
+      for (const m of messages) {
+        if (m.role === 'user') {
+          addUserMessage(m.content);
+        } else if (m.role === 'assistant') {
+          if (m.content) {
+            const bubble = ensureAssistantBubble();
+            bubble.textContent += m.content;
+            finalizeAssistant();
+          }
+        } else if (m.role === 'tool' && m.content.trim()) {
+          addReplayLine(m.content);
+        }
+      }
+      finalizeAssistant();
+      scrollBottom();
+      break;
+    }
     case 'chat_delta':
       if (typeof payload.text === 'string' && payload.text.length > 0) {
         const bubble = ensureAssistantBubble();

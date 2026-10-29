@@ -156,6 +156,7 @@ answer — subject to your approval mode.
 
 Self-hosted / intranet gateways (vLLM, Ollama's OpenAI adapter, corporate LLM gateways) work with
 the same shape — the terminal output never has to leave your network if you don't want it to.
+Side-panel history survives restarts: reopening the panel restores the latest conversation.
 
 ## Configuration
 

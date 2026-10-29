@@ -566,6 +566,8 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<DaemonHandl
       case 'chat_new': {
         const session = chats.create(msg.payload.providerId);
         sendTo(conn, 'chat_created', { chatId: session.id });
+        const replay = chats.replayPayload(session);
+        if (replay.messages.length > 0) sendTo(conn, 'chat_replay', replay);
         break;
       }
       case 'chat_message': {
