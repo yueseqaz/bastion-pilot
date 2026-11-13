@@ -36,9 +36,11 @@ describe('profiles', () => {
     expect(profileById('does-not-exist').id).toBe('generic-xterm');
   });
 
-  it('ships the built-in profiles with raw framing defaults', () => {
+  it('ships the built-in profiles with the expected framing', () => {
     for (const profile of BUILTIN_PROFILES) {
-      expect(profile.framer.type).toBe('raw');
+      // The Anheng Mingyu V2.0 profile carries a Guacamole instruction stream; every
+      // other built-in product talks raw PTY bytes.
+      expect(profile.framer.type).toBe(profile.id === 'anheng-mingyu' ? 'guacamole' : 'raw');
       expect(profile.inputMode).toBe('socket');
     }
   });

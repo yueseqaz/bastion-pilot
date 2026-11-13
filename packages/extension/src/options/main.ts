@@ -617,6 +617,7 @@ function renderSites() {
       { id: 'jumpserver', name: 'JumpServer' },
       { id: 'teleport', name: 'Teleport（实验性）' },
       { id: 'qizhi', name: '齐治（实验性）' },
+      { id: 'anheng-mingyu', name: 'mingyu V2.0（实验性）' },
       { id: 'aliyun-bastionhost', name: '阿里云堡垒机（实验性）' },
     ]) {
       const option = document.createElement('option');

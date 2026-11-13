@@ -7,13 +7,20 @@
  */
 export interface FramerConfig {
   /** Down/up framing of the PTY stream. */
-  type: 'raw' | 'json' | 'base64';
+  type: 'raw' | 'json' | 'base64' | 'guacamole';
   /** json: property that carries the PTY payload on the way down. */
   dataField?: string;
   /** json: how the payload is encoded inside the property. */
   encoding?: 'plain' | 'base64';
   /** json: property name for input frames on the way up. */
   inputField?: string;
+  /**
+   * guacamole: how the base64 `tes` payload is encoded on the wire.
+   * `auto` sniffs UTF-8 first and falls back to GB18030 on invalid bytes.
+   */
+  textEncoding?: 'utf-8' | 'gb18030' | 'auto';
+  /** guacamole: translate LF to CR so input matches xterm's Enter key. */
+  enterAsCr?: boolean;
 }
 
 export interface SiteProfile {
@@ -28,6 +35,13 @@ export interface SiteProfile {
   terminalDomHints: string[];
   /** Shell prompt endings used as an extra completion signal. */
   promptHints: string[];
+  /** Product-specific terminal I/O tuning. */
+  io?: {
+    /** false = never probe or wrap commands with bracketed-paste markers. */
+    bracketedPaste?: boolean;
+    /** Strip echoed commands, prompts and sentinel markers from tool results. */
+    cleanOutput?: boolean;
+  };
 }
 
 export const GENERIC_XTERM_PROFILE: SiteProfile = {
@@ -95,12 +109,27 @@ export const ALIYUN_BASTIONHOST_PROFILE: SiteProfile = {
   promptHints: ['$ ', '# ', ']$ ', ']# '],
 };
 
+export const ANHENG_MINGYU_PROFILE: SiteProfile = {
+  id: 'anheng-mingyu',
+  name: 'Anheng Mingyu V2.0 (mingyu 堡垒机 V2.0)',
+  description:
+    'EXPERIMENTAL — Anheng Mingyu V2.0 O&M audit bastion (mingyu 堡垒机 V2.0). xterm.js front-end, but the SSH terminal ' +
+    'uses a Guacamole-style instruction stream: terminal bytes arrive base64-encoded inside ' +
+    '`tes` opcodes, and input must be sent the same way. Handled by framer.type = "guacamole".',
+  framer: { type: 'guacamole', textEncoding: 'auto', enterAsCr: true },
+  inputMode: 'socket',
+  terminalDomHints: ['.xterm', '.xterm-screen', 'canvas'],
+  promptHints: ['$ ', '# ', ']$ ', ']# ', '~$ ', '~# '],
+  io: { bracketedPaste: false, cleanOutput: true },
+};
+
 export const BUILTIN_PROFILES: SiteProfile[] = [
   GENERIC_XTERM_PROFILE,
   JUMPSERVER_PROFILE,
   TELEPORT_PROFILE,
   QIZHI_PROFILE,
   ALIYUN_BASTIONHOST_PROFILE,
+  ANHENG_MINGYU_PROFILE,
 ];
 
 export function profileById(id: string | undefined | null): SiteProfile {
