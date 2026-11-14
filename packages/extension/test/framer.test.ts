@@ -57,3 +57,68 @@ describe('framer: base64', () => {
     expect(new TextDecoder().decode(framer.decodeDown(encoded))).toBe('round-trip');
   });
 });
+
+describe('framer: guacamole', () => {
+  const tes = (text: string): string => {
+    const b64 = btoa(text);
+    return `3.tes,${b64.length}.${b64};`;
+  };
+
+  it('extracts tes payloads and ignores other instructions', () => {
+    const framer = createFramer({ type: 'guacamole' });
+    const frame = `5.ready,1.0;${tes('hello\n')}3.ack,1.0;`;
+    expect(new TextDecoder().decode(framer.decodeDown(frame))).toBe('hello\n');
+  });
+
+  it('reassembles an instruction split across WebSocket frames', () => {
+    const framer = createFramer({ type: 'guacamole' });
+    const whole = tes('split-output');
+    const cut = 7;
+    expect(new TextDecoder().decode(framer.decodeDown(whole.slice(0, cut)))).toBe('');
+    expect(new TextDecoder().decode(framer.decodeDown(whole.slice(cut)))).toBe('split-output');
+  });
+
+  it('handles several tes instructions in one frame', () => {
+    const framer = createFramer({ type: 'guacamole' });
+    expect(new TextDecoder().decode(framer.decodeDown(tes('a') + tes('b')))).toBe('ab');
+  });
+
+  it('encodes input as a single tes instruction', () => {
+    const framer = createFramer({ type: 'guacamole' });
+    const out = framer.encodeUp('ls\r') as string;
+    const match = /^3\.tes,(\d+)\.([A-Za-z0-9+/=]+);$/.exec(out);
+    expect(match).not.toBeNull();
+    expect(Number(match![1])).toBe(match![2]!.length);
+    expect(atob(match![2]!)).toBe('ls\r');
+  });
+
+  it('translates LF to CR when enterAsCr is set', () => {
+    const framer = createFramer({ type: 'guacamole', enterAsCr: true });
+    const out = framer.encodeUp('ls\n') as string;
+    const match = /^3\.tes,(\d+)\.([A-Za-z0-9+/=]+);$/.exec(out);
+    expect(match).not.toBeNull();
+    expect(atob(match![2]!)).toBe('ls\r');
+  });
+
+  it('decodes GB18030 payloads when configured', () => {
+    const framer = createFramer({ type: 'guacamole', textEncoding: 'gb18030' });
+    // D6 D0 CE C4 is "中文" in GB18030
+    const b64 = btoa(String.fromCharCode(0xd6, 0xd0, 0xce, 0xc4));
+    const frame = `3.tes,${b64.length}.${b64};`;
+    expect(new TextDecoder().decode(framer.decodeDown(frame))).toBe('中文');
+  });
+
+  it('auto-detects GB18030 when UTF-8 validation fails', () => {
+    const framer = createFramer({ type: 'guacamole', textEncoding: 'auto' });
+    const b64 = btoa(String.fromCharCode(0xd6, 0xd0, 0xce, 0xc4));
+    const frame = `3.tes,${b64.length}.${b64};`;
+    expect(new TextDecoder().decode(framer.decodeDown(frame))).toBe('中文');
+  });
+
+  it('keeps UTF-8 intact in auto mode', () => {
+    const framer = createFramer({ type: 'guacamole', textEncoding: 'auto' });
+    const b64 = btoa(String.fromCharCode(0xe4, 0xb8, 0xad, 0xe6, 0x96, 0x87));
+    const frame = `3.tes,${b64.length}.${b64};`;
+    expect(new TextDecoder().decode(framer.decodeDown(frame))).toBe('中文');
+  });
+});

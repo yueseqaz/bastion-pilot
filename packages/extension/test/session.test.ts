@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TerminalSession } from '../src/content/session.js';
+import { TerminalSession, cleanTerminalEcho } from '../src/content/session.js';
 import { GENERIC_XTERM_PROFILE } from '../src/profiles.js';
 import { keySequence } from '../src/content/keys.js';
 
@@ -55,8 +55,8 @@ describe('TerminalSession', () => {
     expect(result.status).toBe('completed');
     expect(result.exitCode).toBe(0);
     expect(result.text).toContain('file1.txt');
-    // Internal sentinel lines are used for completion but are not user output.
-    expect(result.text).not.toContain('__BP_');
+    // The echoed `echo` line (with literal $?) must not have been matched early.
+    expect(result.text).toContain('$?__');
   });
 
   it('reports non-zero exit codes', async () => {
@@ -214,6 +214,33 @@ describe('TerminalSession', () => {
     expect(h.writes[0]).toBe('y\r');
     h.feed('done\r\n');
     await promise;
+  });
+});
+
+describe('cleanTerminalEcho', () => {
+  it('removes the echoed command, prompt lines and sentinel markers', () => {
+    const raw = [
+      '[root@ceshi-bianm ~]# hostname; uptime',
+      'ceshi-bianm',
+      ' 22:39:20 up 22 days,  1 user,  load average: 0.00',
+      '[root@ceshi-bianm ~]# echo __BP_aa3c0f62_$?__',
+      '__BP_aa3c0f62_0__',
+      '[root@ceshi-bianm ~]# ',
+      '',
+    ].join('\n');
+    expect(cleanTerminalEcho(raw, 'hostname; uptime')).toBe(
+      'ceshi-bianm\n 22:39:20 up 22 days,  1 user,  load average: 0.00'
+    );
+  });
+
+  it('removes a command echo without a prompt', () => {
+    expect(cleanTerminalEcho('ls\nfile1\nfile2\n', 'ls')).toBe('file1\nfile2');
+  });
+
+  it('leaves unrelated prompts alone', () => {
+    expect(cleanTerminalEcho('user@host:~# not-a-command\n', 'ls')).toBe(
+      'user@host:~# not-a-command'
+    );
   });
 });
 

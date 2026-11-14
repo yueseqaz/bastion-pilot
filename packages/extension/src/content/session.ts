@@ -5,7 +5,6 @@ import {
   newSentinelNonce,
   sentinelCommandFor,
   wrapCommandWithSentinel,
-  cleanCommandOutput,
   type SessionInfo,
 } from '@bastion-pilot/protocol';
 import { createFramer, type Framer } from './framer.js';
@@ -25,11 +24,13 @@ export interface ExecuteOptions {
 
 export interface SessionOptions {
   /**
-   * Bracketed-paste mode for command typing. The production default is false
-   * so opening a terminal never emits an unapproved probe command; null keeps
-   * the legacy probe available for explicit compatibility/testing.
+   * Bracketed-paste mode for command typing: null (default) probes the shell
+   * once on the first sentinel-attached command; true/false force it. Plain
+   * typing is always used for interactive keystrokes.
    */
   bracketedPaste?: boolean | null;
+  /** Strip shell echo, prompts and sentinel markers from command results. */
+  cleanOutput?: boolean;
 }
 
 export interface CommandResult {
@@ -73,6 +74,7 @@ export class TerminalSession {
   private scanTail = '';
   private lastDataAt = 0;
   private bracketedPaste: boolean | null;
+  private readonly cleanOutput: boolean;
 
   constructor(
     readonly socketId: string,
@@ -84,7 +86,8 @@ export class TerminalSession {
   ) {
     this.sessionId = `sess_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
     this.framer = createFramer(profile.framer);
-    this.bracketedPaste = opts.bracketedPaste === undefined ? false : opts.bracketedPaste;
+    this.bracketedPaste = opts.bracketedPaste ?? null;
+    this.cleanOutput = opts.cleanOutput === true;
     this.info = {
       sessionId: this.sessionId,
       title,
@@ -152,7 +155,7 @@ export class TerminalSession {
   } {
     const result = this.ring.readFromCursor(cursor, maxChars);
     const pending = this.renderer.pending();
-    return { ...result, text: stripSentinelNoise(result.text + pending) };
+    return { ...result, text: result.text + pending };
   }
 
   /** Snapshot of the visible screen (fallback when no xterm instance is reachable). */
@@ -204,22 +207,18 @@ export class TerminalSession {
     const waitMs = opts.waitMs ?? 10_000;
     const quietMs = opts.quietMs ?? 800;
     const attachSentinel = opts.attachSentinel !== false;
-    const initialCursor = this.ring.endCursor;
+    const cursorBefore = this.ring.endCursor;
 
     if (!attachSentinel) {
       const sentAt = Date.now();
       this.typeText(`${command}\r`);
       const status = await this.waitQuietOrTimeout(sentAt, waitMs, quietMs);
-      return this.buildResult(initialCursor, status, null, command);
+      return this.buildResult(cursorBefore, status, null, command);
     }
 
     if (this.bracketedPaste === null) {
       this.bracketedPaste = await this.probeBracketedPaste(Math.max(800, Math.min(waitMs, 3_000)));
     }
-
-    // Do not include the one-time bracketed-paste probe in the user's command
-    // result; it is an internal capability check, not terminal output.
-    const cursorBefore = this.ring.endCursor;
 
     const nonce = newSentinelNonce();
     const { waiter, done } = this.addWaiter(nonce);
@@ -341,20 +340,42 @@ export class TerminalSession {
       status,
       exitCode,
       cursor: result.nextCursor,
-      text: cleanCommandOutput(result.text, command),
+      text: this.cleanOutput ? cleanTerminalEcho(result.text, command) : result.text,
       hasMore: result.hasMore,
     };
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+const SENTINEL_LINE = /__BP_[0-9a-f]{8}_/;
+const PROMPT_ONLY = /^\s*(?:\[[^\]]+\]|[\w.-]+@[\w.:~/-]+)\s*[#$>]\s*$/;
+
+/**
+ * Remove the shell's own noise from a command result: the echoed command
+ * (with or without its prompt), prompt-only lines, sentinel markers, and the
+ * blank lines left at both ends. Only used for profiles that opt in.
+ */
+export function cleanTerminalEcho(text: string, command?: string): string {
+  const cmd = (command ?? '').replace(/\r/g, '').trim();
+  const out: string[] = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/\r/g, '');
+    if (SENTINEL_LINE.test(line)) continue;
+    if (!line.trim()) {
+      out.push('');
+      continue;
+    }
+    if (cmd && line.trim().endsWith(cmd)) {
+      const prefix = line.slice(0, line.length - cmd.length);
+      if (!prefix.trim() || /[#$>]\s*$/.test(prefix)) continue; // echoed command
+    }
+    if (PROMPT_ONLY.test(line)) continue;
+    out.push(line);
+  }
+  while (out.length > 0 && out[0]!.trim() === '') out.shift();
+  while (out.length > 0 && out[out.length - 1]!.trim() === '') out.pop();
+  return out.join('\n');
 }
 
-/** Hide the internal completion marker from tool results while retaining it in the raw buffer. */
-function stripSentinelNoise(text: string): string {
-  return text
-    .split('\n')
-    .filter((line) => !line.includes('__BP_') || !/(?:\$\?__|_[0-9]+__)/.test(line))
-    .join('\n');
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

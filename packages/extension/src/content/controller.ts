@@ -193,7 +193,11 @@ class TabController {
       profile,
       (data) => this.writeSocket(socketId, data),
       location.href,
-      title
+      title,
+      {
+        bracketedPaste: profile.io?.bracketedPaste,
+        cleanOutput: profile.io?.cleanOutput,
+      }
     );
     this.session.feed(firstFrame);
     void this.registerWithWorker();

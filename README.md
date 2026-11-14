@@ -6,10 +6,10 @@
 **Bring AI agents to bastion-host web terminals.**
 
 In many companies the only way to reach production servers is through a bastion host (JumpServer,
-Qizhi, Aliyun Bastionhost, ...) that exposes a **web terminal in the browser**. There is no SSH
-access, so CLI agents like Claude Code or Codex cannot reach your servers. BastionPilot fixes
-that: a browser extension hooks the web terminal and acts as the agent's _hands and eyes_, while a
-local bridge exposes clean, auditable tools to any AI brain you prefer.
+Qizhi, Aliyun Bastionhost, Anheng Mingyu V2.0, ...) that exposes a **web terminal in the browser**.
+There is no SSH access, so CLI agents like Claude Code or Codex cannot reach your servers.
+BastionPilot fixes that: a browser extension hooks the web terminal and acts as the agent's _hands
+and eyes_, while a local bridge exposes clean, auditable tools to any AI brain you prefer.
 
 ```
 Claude Code / Codex            Side-panel chat
@@ -53,8 +53,8 @@ Claude Code / Codex            Side-panel chat
   result pattern, so the sentinel resolves exactly once, carrying the exit code. Quiet detection
   and timeouts back it up for interactive situations.
 - **Products are abstracted into thin profiles.** WebSocket transport is universal; framing
-  (raw / JSON / base64) and DOM hints live in declarative site profiles. JumpServer ships built
-  in; anything xterm.js-based works with the generic profile.
+  (raw / JSON / base64 / Guacamole) and DOM hints live in declarative site profiles. JumpServer and
+  Anheng Mingyu V2.0 ship built in; anything xterm.js-based works with the generic profile.
 
 ## What you get
 
@@ -186,7 +186,7 @@ Side-panel history survives restarts: reopening the panel restores the latest co
 | `transcripts.enabled`        | `true`    | per-session terminal transcripts under `~/.bastion-pilot/transcripts/` |
 
 Extension-side settings (options page): daemon URL, pairing token, AI providers, granted origins
-and the site profile per origin (`generic-xterm` / `jumpserver`). AI provider settings are written
+and the site profile per origin (`generic-xterm` / `jumpserver` / `anheng-mingyu`). AI provider settings are written
 by the authenticated local daemon and are not stored in browser sync storage.
 
 ## Troubleshooting
@@ -234,6 +234,7 @@ with your company's policies** — including whether terminal output may be sent
 - [x] File upload/download over the terminal (`upload_file` / `download_file`, base64 chunks)
 - [x] iframe-based terminals (one session per terminal frame)
 - [x] More site profiles — Teleport, Qizhi, Aliyun Bastionhost (experimental, field-test welcome)
+- [x] Anheng Mingyu V2.0 (mingyu V2.0) bastion support via Guacamole instruction framing
 - [x] Session transcripts replay for post-incident review (`bastion-pilot transcripts`)
 - [x] npm publish-ready bridge package (`pnpm --filter bastion-pilot publish`)
 - [ ] Published npm package + `npx bastion-pilot mcp` (needs the maintainer's npm account)

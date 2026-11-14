@@ -5,7 +5,7 @@
 
 **把 AI Agent 带进堡垒机 Web 终端。**
 
-在很多公司，访问生产服务器的唯一途径是堡垒机（JumpServer、齐治、阿里云堡垒机……），而它只在
+在很多公司，访问生产服务器的唯一途径是堡垒机（JumpServer、齐治、阿里云堡垒机、mingyu V2.0……），而它只在
 浏览器里提供一个 **Web 终端**。没有 SSH 直连，Claude Code、Codex 这类 CLI Agent 就够不到你的
 服务器。BastionPilot 就是来解决这个问题的：一个浏览器插件挂接 Web 终端，充当 Agent 的
 “手和眼”；一个本地 bridge 把干净、可审计的工具暴露给你选用的任意 AI 大脑。
@@ -40,14 +40,15 @@ Claude Code / Codex            侧边栏聊天
 - **其他所有大脑都连到它。** Claude Code / Codex 走 daemon 的 MCP Server；侧边栏聊天走 daemon
   里内置的 Agent 循环（用你自己的 OpenAI 兼容 Provider）。两种大脑汇入同一套工具执行器、同一
   份审批策略、同一份审计日志。
-- **输出被加工成模型友好的形态。** PTY 字节流被解码（UTF-8、跨块安全），ANSI/OSC 转义序列被
+- **输出被加工成模型友好的形态。** PTY 字节流被解码（UTF-8；Guacamole 流自动识别
+  GB18030，跨块安全），ANSI/OSC 转义序列被
   剥离，`\r`/`\b` 的覆盖语义被正确应用（进度条塌缩成最终一行）；超长输出落盘到本地文件并把路
   径返回给 Agent——Claude Code 可以用自己的文件工具精读全文。
 - **命令完成判定可靠。** 输入命令后追加一条 `echo __BP_<nonce>_$?__` 哨兵。回显里的字面 `$?`
   永远匹配不上结果模式，所以哨兵恰好触发一次，并带回退出码。交互场景由静默检测和超时兜底。
 - **产品差异被压进很薄的 profile。** WebSocket 传输层是通用的；分帧方式（raw / JSON /
-  base64）和 DOM 线索放在声明式的站点 profile 里。JumpServer 内置支持；任何 xterm.js 系的产
-  品用通用 profile 即可。
+  base64 / Guacamole）和 DOM 线索放在声明式的站点 profile 里。JumpServer、mingyu V2.0
+  内置支持；任何 xterm.js 系的产品用通用 profile 即可。
 
 ## 你会得到什么
 
@@ -188,7 +189,7 @@ Agent 通过 `get_shared_context` 读取消息，并用 `append_shared_context` 
 | `transcripts.enabled`        | `true`    | 按会话记录终端转录到 `~/.bastion-pilot/transcripts/` |
 
 插件侧设置（选项页）：服务地址、配对令牌、AI 服务商、已授权站点及每个站点的
-站点 profile（`generic-xterm` / `jumpserver`）。AI Provider 配置由本地 daemon 通过鉴权连接
+站点 profile（`generic-xterm` / `jumpserver` / `anheng-mingyu`）。AI Provider 配置由本地 daemon 通过鉴权连接
 保存，不会写入浏览器同步存储。终端命令在默认严格模式下每次都必须经过用户批准；只读的会话发现和输出读取不会改变服务器状态。
 
 ## 常见问题
@@ -235,6 +236,7 @@ profiles            适配更多堡垒机产品的说明
 - [x] 通过终端传文件（`upload_file` / `download_file`，base64 分块）
 - [x] iframe 型终端（每个终端 iframe 一个会话）
 - [x] 更多站点 profile —— Teleport、齐治、阿里云堡垒机（实验性，欢迎实测反馈）
+- [x] mingyu堡垒机 V2.0 支持（Guacamole 指令流）
 - [x] 会话转录回放（`bastion-pilot transcripts`）
 - [x] bridge 包已就绪可发布 npm（`pnpm --filter bastion-pilot publish`）
 - [ ] 正式发布 npm + `npx bastion-pilot mcp`（需要维护者的 npm 账号）

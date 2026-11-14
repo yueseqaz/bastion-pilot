@@ -11,7 +11,7 @@ A profile describes everything product-specific about a bastion web terminal. Ev
   "name": "My Bastion",
   "framer": {
     // how the PTY stream is framed
-    "type": "raw", // raw | json | base64
+    "type": "raw", // raw | json | base64 | guacamole
     "dataField": "data", // json: field carrying the payload
     "encoding": "plain", // json: plain | base64
     "inputField": "input", // json: field for upstream input
@@ -27,6 +27,9 @@ Built-in profiles live in `packages/extension/src/profiles.ts`:
 - `generic-xterm` — any xterm.js web terminal with a raw PTY stream (ttyd, koko, sshwifty, most
   bastion products).
 - `jumpserver` — JumpServer's koko terminal (raw framing, JumpServer DOM hints).
+- `anheng-mingyu` — Anheng Mingyu V2.0 (mingyu 堡垒机 V2.0). xterm.js front-end, but the SSH
+  terminal uses a Guacamole instruction stream (`tes` opcodes, base64 payloads); uses the
+  `guacamole` framer with UTF-8/GB18030 auto-detection and CR line endings.
 
 ## Adding support for a new product
 
@@ -36,6 +39,8 @@ Built-in profiles live in `packages/extension/src/profiles.ts`:
    - Text frames containing JSON → note the field that carries the payload and whether it is
      base64 → use `framer.type = "json"`.
    - Text frames containing base64 → `framer.type = "base64"`.
+   - Text frames containing Guacamole instructions (`<len>.<opcode>,<len>.<arg>,...;`) →
+     `framer.type = "guacamole"`.
 2. Add a new `SiteProfile` entry in `packages/extension/src/profiles.ts` (keep it declarative),
    including DOM hints unique to the product.
 3. Select the profile for your origin in the extension options page.
